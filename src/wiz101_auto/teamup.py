@@ -226,6 +226,26 @@ def add_team_dungeon(dungeon: str, quest: str) -> None:
     TEAM_LIST_FILE.write_text(json.dumps(teams, indent=1), encoding="utf-8")
 
 
+BEATEN_FILE = Path("state") / "team_beaten.json"
+
+
+def mark_beaten(zone: str) -> None:
+    """A team beat this dungeon's boss (its fight step passed in there)."""
+    got = set(beaten_bases()) | {_dungeon_base(zone)}
+    try:
+        BEATEN_FILE.parent.mkdir(exist_ok=True)
+        BEATEN_FILE.write_text(json.dumps(sorted(got)), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def beaten_bases() -> set[str]:
+    try:
+        return set(json.loads(BEATEN_FILE.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return set()
+
+
 def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = None) -> list[str]:
     """Added dungeons whose quest is done (no longer in the book) go back to
     solo. The ones dropped. With `seen_before` (the last read's quests): only
@@ -233,8 +253,13 @@ def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = Non
     list under a quest the book didn't show yet, was dropped two minutes
     later, and Yacate was fought alone again)."""
     teams = team_list()
+    # (Only once its boss was beaten there: 'Moonlight Shadows' is shown only
+    # inside the Eclipse Tower; outside it "left" the book, the tower went
+    # back to solo and the bot walked alone into Ravik Dreamscape.)
+    beaten = beaten_bases()
     gone = [d for d, q in teams.items()
-            if q not in open_quests and (seen_before is None or q in seen_before)]
+            if q not in open_quests and (seen_before is None or q in seen_before)
+            and _dungeon_base(d) in beaten]
     if gone:
         for d in gone:
             del teams[d]

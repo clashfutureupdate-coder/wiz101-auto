@@ -4,11 +4,16 @@ def test_team_list_adds_and_drops(tmp_path, monkeypatch):
     from wiz101_auto import teamup
 
     monkeypatch.setattr(teamup, "TEAM_LIST_FILE", tmp_path / "team_dungeons.json")
+    monkeypatch.setattr(teamup, "BEATEN_FILE", tmp_path / "team_beaten.json")
     tent = "Zafaria/Interiors/ZF_Z08_I02_Belloqs_Tent"
     assert not teamup.is_team_up_zone(tent)
     teamup.add_team_dungeon(tent, "Under the Big Tent")
     assert teamup.is_team_up_zone(tent) and teamup.is_team_dungeon(tent)
     assert teamup.drop_team_dungeons({"Under the Big Tent"}) == []
+    # Gone from the book but its boss not beaten there (a quest shown only
+    # inside its dungeon): kept.
+    assert teamup.drop_team_dungeons({"Something Else"}) == []
+    teamup.mark_beaten(tent)
     assert teamup.drop_team_dungeons({"Something Else"}) == [tent]
     assert not teamup.is_team_up_zone(tent)
 
@@ -26,7 +31,9 @@ def test_a_team_dungeon_stays_until_its_quest_leaves_the_book(tmp_path, monkeypa
     from wiz101_auto import teamup
 
     monkeypatch.setattr(teamup, "TEAM_LIST_FILE", tmp_path / "team_list.json")
+    monkeypatch.setattr(teamup, "BEATEN_FILE", tmp_path / "team_beaten.json")
     teamup.add_team_dungeon("Azteca/AZ_Z12_Xibalba", "This Is the Way the World Ends")
+    teamup.mark_beaten("Azteca/AZ_Z12_Xibalba")
     # Not in the book yet (or a read that missed it): kept.
     assert teamup.drop_team_dungeons({"Tall Enough to Meet the Sun"}, {"Tall Enough to Meet the Sun"}) == []
     # In the book last time, gone now: done.

@@ -1413,9 +1413,9 @@ class Quester:
                         and not is_combat_objective(objective)):
                     # A team won this dungeon's fight: what's left of it may
                     # be done alone (Tymen's talk after the team beat him).
-                    from .teamup import _dungeon_base
+                    from .teamup import mark_beaten
 
-                    self.__dict__.setdefault("_team_beaten", set()).add(_dungeon_base(zone))
+                    mark_beaten(zone)
                 place = objective_zone(objective) if talk_target(objective) else None
                 if place and self._active_quest in (self._mainline or set()):
                     # The story's next giver is likeliest where its last step
@@ -2151,10 +2151,10 @@ class Quester:
         from .teamup import TEAM_UP_DUNGEONS, is_team_dungeon
 
         objective_now = await self.objective() or ""
-        from .teamup import _dungeon_base, team_list
+        from .teamup import _dungeon_base, beaten_bases, team_list
 
         listed_for = team_list().get(dungeon or "")
-        if listed_for:
+        if listed_for and _dungeon_base(dungeon or "") in beaten_bases():
             got = await self._quests_in_memory()
             if got is not None and listed_for not in {n.strip() for n in got[0]}:
                 # Its quest is done (memory says so; a read inside a dungeon
@@ -2169,7 +2169,7 @@ class Quester:
                 if load_queue().get("quest") == listed_for:
                     clear_queue()
 
-        beaten = getattr(self, "_team_beaten", set())
+        beaten = beaten_bases()
         if (is_team_dungeon(dungeon or "") and not is_combat_objective(objective_now)
                 and (dungeon or "") not in TEAM_UP_DUNGEONS and _dungeon_base(dungeon or "") in beaten):
             # (Only once a team beat its boss: 'Go To Eclipse Tower' is no
