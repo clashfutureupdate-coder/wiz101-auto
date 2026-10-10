@@ -85,7 +85,8 @@ def next_room(order: list[str], pos: int) -> str | None:
 
 
 QUEUE_FILE = Path("state") / "team_queue.json"  # {"dungeon", "quest", "at"}: queued, questing meanwhile
-QUEUE_RECHECK = 15 * 60  # queued: the main quest waits this long, then the sigil again (queue still on?)
+QUEUE_RECHECK = 5 * 60  # queued: the main quest waits this long, then the sigil again (queue still on? the
+# player saw none while the bot thought it waited: out of it for any reason, queue again soon)
 
 
 def save_queue(dungeon: str, quest: str, sure: bool = False) -> None:
