@@ -4408,8 +4408,10 @@ class Quester:
             # set aside as a side quest, "no main quest", and NPCs were asked.)
             waiting = set(team_list().values())
             # (Or one set aside with its boss, not by name: 'Take Me In'.)
+            # (Or skipped by the player's choice: "Shadows and Don'ts", its
+            # tutorial left for the player; it's in the book, no giver to seek.)
             with_boss = {q.name for _, q in all_quests if game_main[id(q)] and q.name in set_aside
-                         and q.name not in self.setbacks.skipped and q.name not in self.setbacks.deferred}
+                         and q.name not in self.setbacks.deferred}
             parked = sorted(q.name for _, q in all_quests
                             if q.name in set_aside and ((self.setbacks.deferred.get(q.name) or {}).get("main")
                                                         or q.name in waiting or q.name in with_boss))
