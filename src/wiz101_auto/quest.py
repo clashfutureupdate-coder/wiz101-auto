@@ -8931,7 +8931,9 @@ class Quester:
                     logger.info(f"drinking a potion (hp {hp:.0%}, mana {mana:.0%}); staying in the dungeon")
                     await ui.click(self.client, ui.POTION_BUTTON)
                     await asyncio.sleep(1.5)
-        if not heal_now and in_dungeon and self.upkeep and not is_team_up_zone(zone_now):
+        if not heal_now and in_dungeon and self.upkeep:
+            # (In team dungeons too: leading the fights when the teammate
+            # didn't, it walked into Ravik at 49%.)
             # No fight ahead that we know of, but a dungeon's step can start
             # one ("Read Tapestry Plaque" brought out the Nameless Knight at
             # 73% health: lost by a sliver): topped up from the room's wisps,
