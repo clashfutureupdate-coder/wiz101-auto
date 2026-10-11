@@ -211,6 +211,7 @@ ENGAGE_BACKOFF_MAX = 2400.0
 WALKED_CLOSE = 250.0  # a walked path ended this near its target: arrived
 WALK_IN_MIN = 600.0  # a walk-in starts at least this far from the boss
 MAIN_LOSSES_NO_LADDER = 5  # a story fight lost this often with one fixed deck: side quests, then again
+BOSS_WIN_SETTLE = 20.0  # after a boss win in a team dungeon: the objective read this much later
 TEAM_UP_AFTER_LOSSES = 2  # a main boss in a dungeon lost this often: Team Up at its sigil (the player)
 MAIN_LOSSES_RETRY_SECONDS = 3600.0  # (or at the next level-up)
 MAIN_LOSSES_RETRY_SAME_LEVEL = 2  # back after the hour at the same level: this many, then wait again
@@ -3223,21 +3224,36 @@ class Quester:
         self._last_rank = -1e9
         return True
 
-    def _note_team_boss_win(self, zone: str):
+    async def _note_team_boss_win(self, zone: str):
         """A fight with a boss in a team dungeon ended and we're alive: its boss
         is beaten (Ravik: the game tracked Galek's quest meanwhile, so no boss
-        step was seen passing, and the tower stayed team-only)."""
+        step was seen passing, and the tower stayed team-only). Unless the
+        objective still names him a little later: Ghost Dog's first fight won,
+        "Find Ghost Dog" stayed for his second, and the Keep went solo."""
         fights = getattr(self.fighter, "fights", 0) if self.fighter else 0
         seen = getattr(self, "_boss_win_seen", None)
         self._boss_win_seen = (fights, self.controller.deaths)
+        pending = getattr(self, "_boss_win_pending", None)
+        if pending and self.controller.deaths != pending[3]:
+            self._boss_win_pending = pending = None  # (lost the next fight: not beaten)
+        if pending and time.monotonic() - pending[2] >= BOSS_WIN_SETTLE:
+            self._boss_win_pending = None
+            won_zone, bosses, _at, _deaths = pending
+            objective = (await self.objective() or "").lower()
+            if objective and any(b.lower() in objective for b in bosses):
+                logger.info(f"{', '.join(sorted(bosses))} still in the objective: a fight to come, "
+                            "not beaten yet")
+            else:
+                from .teamup import mark_beaten
+
+                mark_beaten(won_zone)
+                logger.info(f"beat {', '.join(sorted(bosses))} in {won_zone.split('/')[-1]}: "
+                            "its team part is done")
         if seen is None or fights == seen[0] or self.controller.deaths != seen[1]:
             return
         bosses = getattr(self.fighter, "last_bosses", set())
         if zone and bosses and is_team_up_zone(zone):
-            from .teamup import mark_beaten
-
-            mark_beaten(zone)
-            logger.info(f"beat {', '.join(sorted(bosses))} in {zone.split('/')[-1]}: its team part is done")
+            self._boss_win_pending = (zone, set(bosses), time.monotonic(), self.controller.deaths)
 
     async def _note_defeats(self):
         """After a defeat, count it against the objective; the second one sets the
@@ -8963,7 +8979,7 @@ class Quester:
             self._last_wisp_scan = time.monotonic()
             self._in_background("wisps", lambda: scan_wisps(self.client))  # learn wisp spawn points
         await self._note_defeats()
-        self._note_team_boss_win(zone_here)
+        await self._note_team_boss_win(zone_here)
         logger.debug("step: defeats noted")
         await self._boss_health_bar()
         # A patrol walked up while we stood still: step aside (outdoors, and not
