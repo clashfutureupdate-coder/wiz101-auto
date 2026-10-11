@@ -8163,8 +8163,11 @@ class Quester:
         # instead: 'Into the Sea' sent it to the world gate for Atlantea
         # again and again.)
         tracked_aside = self._active_quest in (self.setbacks.skipped | set(self.setbacks.deferred))
-        if (not (self._grinding or (tracked_aside and elsewhere))
-                or (objective not in waiting and not elsewhere)):
+        # (A skipped quest's step anywhere: "Attend Shadow Pacts Tutorial",
+        # left to the player, sent it round Moon Cliffs' quest lights.)
+        skipped_here = self._active_quest in self.setbacks.skipped
+        if (not (self._grinding or (tracked_aside and elsewhere) or skipped_here)
+                or (objective not in waiting and not elsewhere and not skipped_here)):
             return False
         here = await self.client.zone_name() or ""
         indoors = "interiors" in here.lower() or await self._in_any_dungeon(here)
