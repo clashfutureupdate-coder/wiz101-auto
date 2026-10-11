@@ -622,6 +622,17 @@ def save_hand_ins(hand_ins: dict[str, list[list[str]]]):
         pass
 
 
+def retalk_after_turn_in(gone: set[str], new: set[str], last_talk, now: float,
+                         window: float = TURN_IN_TALK_SECONDS) -> bool:
+    """Quests just left the book (memory or a read) after a talk with an NPC
+    (`last_talk`: (npc, zone, when)): that talk was the turn-in; talk to them
+    again for the next one (the player's rule, for every quest). Not when the
+    turn-in already came with a new quest, nor long after the talk."""
+    if not gone or new or not last_talk or not last_talk[1]:
+        return False
+    return now - last_talk[2] <= window
+
+
 def load_retalk() -> list[list[str]]:
     try:
         return [list(x) for x in json.loads(RETALK_FILE.read_text(encoding="utf-8"))]
@@ -4285,6 +4296,10 @@ class Quester:
         if got is None:
             return False
         now, active = got
+        # A quest gone from memory right after a talk (the turn-in): that NPC
+        # again, whatever ranking follows ('Old Man of the Desert' handed in to
+        # Zarozinia the DeathSong; a side quest was picked instead of her next).
+        self._talk_again_after_turn_in(set(mem - now), set(now - mem))
         if (now - mem == {active} and mem - now == {chosen} and chosen in (self._mainline or set())
                 and await self._tracked_main_in_memory()):
             # The story's next quest handed over (the game tracks it at once):
@@ -4297,6 +4312,11 @@ class Quester:
                 self.completions._seen = (seen - {chosen}) | {active}
             self.completions._logged.add(chosen)
             self._talk_again_after_completion([chosen])
+            if pin and norm(pin) == norm(chosen):
+                # (The pick moves on with the story: 'Beach Comber' stayed
+                # pinned after it was done, and was "done" again later.)
+                self._pin = pin = active
+                save_pin(active)
             self._mainline = (set(self._mainline or ()) - {chosen}) | {active}
             self._active_quest = active
             self._ranking_memo = (frozenset((memo[0] - {chosen}) | {active}), active, memo[2], pin,
@@ -4610,6 +4630,9 @@ class Quester:
                 except OSError:
                     pass
                 self._talk_again_after_turn_in(prev_names - names, names - prev_names)
+            elif self._active_quest and self._active_quest in prev_names - names:
+                # (A short read too: the quest under way gone right after a talk.)
+                self._talk_again_after_turn_in({self._active_quest}, set())
             here = await self.client.zone_name() or ""
             # Side quests fill in only in the main quest's world (where it will be
             # picked up again at the next level), never a trip to another world.
@@ -4905,17 +4928,17 @@ class Quester:
         Revisited' only when talked to a second time; the bot had walked off
         and the story stopped)."""
         last = self.__dict__.get("_last_talk")
-        if not gone or not last or time.monotonic() - last[2] > TURN_IN_TALK_SECONDS:
+        if not gone or not last or VISIT_FILE.exists():
+            return
+        # (They gave the next one with the turn-in: Pierce Stanson handed
+        # out 'Spirit of the Sea' with 'On the Waterfront'.)
+        if not retalk_after_turn_in(gone, new, last, time.monotonic()):
+            if new:
+                logger.debug(f"turn-in to {last[0]} came with {', '.join(sorted(new))}: no second talk")
+                self._last_talk = None
             return
         npc, zone, _t = last
         self._last_talk = None
-        if VISIT_FILE.exists() or not zone:
-            return
-        if new:
-            # (They gave the next one with the turn-in: Pierce Stanson handed
-            # out 'Spirit of the Sea' with 'On the Waterfront'.)
-            logger.debug(f"turn-in to {npc} came with {', '.join(sorted(new))}: no second talk")
-            return
         logger.info(f"handed in {', '.join(sorted(gone))} to {npc}: talking to them again for the next quest")
         VISIT_FILE.write_text(json.dumps({"npc": npc, "zone": zone}), encoding="utf-8")
 

@@ -199,6 +199,9 @@ async def prompt_loop(client, quester, controller):
                 zone = await client.zone_name() or ""
                 quester._recent_talks = [*getattr(quester, "_recent_talks", [])[-3:],
                                          (title, zone, time.monotonic())]
+                # (And the turn-in a quest leaving the book is put down to: the
+                # NPC is asked again for the next one.)
+                quester._last_talk = (title, zone, time.monotonic())
             elif should_use(objective, prompt, title) and not await _in_team_dungeon(client):
                 last_press = time.monotonic()
                 logger.info(f"prompt for {title} showed: using it at once")

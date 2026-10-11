@@ -21,3 +21,15 @@ def test_potions_bought_below_three_never_with_a_team():
     assert not should_buy_potions(0, 0)  # no potion slots yet
     assert not should_buy_potions(0, 4, in_team_dungeon=True)  # the team moves on without us
     assert not should_buy_potions(0, 4, team_return=True)  # back to the team first
+
+
+def test_retalk_after_any_turn_in():
+    from wiz101_auto.quest import TURN_IN_TALK_SECONDS, retalk_after_turn_in
+
+    talk = ("Zarozinia the DeathSong", "Khrysalis/KR_Z06_CrescentBeach", 100.0)
+    assert retalk_after_turn_in({"Old Man of the Desert"}, set(), talk, 140.0)
+    assert not retalk_after_turn_in({"Old Man of the Desert"}, {"Next One"}, talk, 140.0)  # given with it
+    assert not retalk_after_turn_in(set(), set(), talk, 140.0)  # nothing handed in
+    assert not retalk_after_turn_in({"Old Man of the Desert"}, set(), None, 140.0)  # no talk
+    assert not retalk_after_turn_in({"Old Man of the Desert"}, set(), talk, 100.0 + TURN_IN_TALK_SECONDS + 1)
+    assert not retalk_after_turn_in({"X"}, set(), ("NPC", "", 100.0), 110.0)  # no zone to go back to
