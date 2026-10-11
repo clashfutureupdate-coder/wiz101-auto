@@ -180,7 +180,7 @@ async def prompt_loop(client, quester, controller):
                 title = await ui.text_at(client, NPC_RANGE_TITLE)
                 if should_collect(objective, prompt, title):
                     last_collect = time.monotonic()
-                    logger.info(f"pick-up prompt for {title} showed: collecting at once")
+                    logger.info(f"pick-up prompt for {title} showed ({prompt!r}): collecting at once")
                     await client.send_key(Keycode.X, 0.1)
                     continue
         except Exception as exc:

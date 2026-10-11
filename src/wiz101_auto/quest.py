@@ -208,6 +208,7 @@ SEEK_CLEAR = 1200.0  # no other kind of enemy this close to a spot we go to
 LONE_TARGET_CLEARANCE = 800.0  # going after an enemy: no other kind this close to it
 ENGAGE_BACKOFF = 400.0  # landing on it started no fight: walk in from this far, times the misses
 ENGAGE_BACKOFF_MAX = 2400.0
+SIGIL_SLOT = 200.0  # a 4-player sigil's slot circles: this far from its centre
 TALK_FIGHT_TRIES = 2  # "Talk To X" with X a mob here: fights started for it before talking instead
 ENGAGE_CIRCLE_WAIT = 25.0  # landed on a duel circle with no fight yet: wait this long for it
 WALKED_CLOSE = 250.0  # a walked path ended this near its target: arrived
@@ -2281,8 +2282,13 @@ class Quester:
             if not await self._enter_prompt_up():
                 # Off the sigil (the Interrogation Chamber's marker refuses a
                 # teleport; the landing 130 away, X there did nothing): walk on.
-                for _ in range(3):
-                    await self.client.goto(sigil.x, sigil.y)
+                # (The centre, then the slot circles around it: a 4-player
+                # sigil's prompt shows on its slots, not where the marker is;
+                # the Saqqara Bird's in Fort Rachias never prompted at its centre.)
+                spots = [sigil, *(XYZ(sigil.x + SIGIL_SLOT * math.cos(a), sigil.y + SIGIL_SLOT * math.sin(a),
+                                      sigil.z) for a in (i * math.pi / 2 for i in range(4)))]
+                for spot in spots:
+                    await self.client.goto(spot.x, spot.y)
                     for _ in range(6):
                         await asyncio.sleep(0.5)
                         if await self._enter_prompt_up():
@@ -2291,7 +2297,9 @@ class Quester:
                         continue
                     break
                 else:
-                    logger.warning("no 'Press X to Enter' prompt by the sigil; pressing X anyway")
+                    shown = await ui.text_at(self.client, ui.NPC_RANGE_TEXT)
+                    logger.warning("no 'Press X to Enter' prompt by the sigil; pressing X anyway"
+                                   + (f" (the prompt there: {shown!r})" if shown else ""))
             logger.info(f"on the dungeon sigil; pressing X once and waiting up to {SIGIL_WAIT:.0f}s")
             await self.client.send_key(Keycode.X, 0.1)
             started = time.monotonic()
