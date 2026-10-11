@@ -2711,7 +2711,15 @@ class Quester:
         objective = await self.objective()
         target = objective_zone(objective)
         brothers_due = pending_pre_bosses(defeat_target(objective or "") or "", load_pre_bosses_beaten())
-        if is_team_up_zone(zone):
+        from .teamup import _dungeon_base, beaten_bases
+
+        if (is_team_up_zone(zone) and _dungeon_base(zone) in beaten_bases()
+                and not is_combat_objective(objective or "")):
+            # Its boss beaten with the team and the step is outside ('Talk To
+            # Sofia DarkSide' after the Shadow of the Land: it stayed at the
+            # exit for 5 minutes): out.
+            leave = True
+        elif is_team_up_zone(zone):
             leave = False  # never leave a team dungeon
         elif brothers_due and zone in self.__dict__.get("_pre_boss_rooms", load_pre_boss_rooms()).values():
             # In a brother's warren (Ullik's Helgrind Warren) before he's
