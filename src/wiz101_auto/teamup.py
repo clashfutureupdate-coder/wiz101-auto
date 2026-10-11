@@ -717,6 +717,14 @@ def note_team_run(zone: str, new_run: bool = True) -> None:
         pass
 
 
+def end_team_run() -> None:
+    """Gone into a dungeon alone: no team run any more."""
+    try:
+        TEAM_RUN_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def in_team_run(zone: str) -> bool:
     """`zone` is a room of the team run of the last TEAM_RUN_HOURS."""
     try:

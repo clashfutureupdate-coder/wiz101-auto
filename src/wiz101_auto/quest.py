@@ -2276,6 +2276,12 @@ class Quester:
                 if await self.client.is_loading() or await self.client.zone_name() != zone:
                     await wait_for_loading(self.client)
                     logger.success("entered the dungeon")
+                    from .teamup import end_team_run
+
+                    # (In alone: an earlier team run there made its rooms team
+                    # rooms, and the bot waited in Fort Rachias's Keep for a
+                    # teammate who never came, then left and came back in.)
+                    end_team_run()
                     self._dungeon = (zone or "", await self.client.zone_name() or "")
                     self._sigil_failed_at = None
                     await self._remember_dungeon(zone, sigil)
