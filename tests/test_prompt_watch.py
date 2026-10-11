@@ -39,3 +39,9 @@ def test_a_sigil_named_after_the_item_is_not_a_pick_up():
     assert not should_collect("Collect Drum in Elephant Graveyard (0 of 4)", "Press X to enter", "Drum House")
     assert should_collect("Collect Drum in Elephant Graveyard (0 of 4)", "Press X to collect", "Drum")
     assert should_collect("Collect Red Crystal Sample", "Press X", "Crystal Sample")
+
+
+def test_no_collect_press_on_a_sigil_named_like_the_item():
+    from wiz101_auto.prompt_watch import should_collect
+
+    assert not should_collect("Find Saqqara Bird in Fort Rachias", "Press X to Enter", "Saqqara Bird")
