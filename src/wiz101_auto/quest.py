@@ -2233,6 +2233,20 @@ class Quester:
             # so a mark inside is useless, but Recall to the sigil saves the walk.
             await self._mark_here()
             await asyncio.sleep(0.5)
+            if not await self._enter_prompt_up():
+                # Off the sigil (the Interrogation Chamber's marker refuses a
+                # teleport; the landing 130 away, X there did nothing): walk on.
+                for _ in range(3):
+                    await self.client.goto(sigil.x, sigil.y)
+                    for _ in range(6):
+                        await asyncio.sleep(0.5)
+                        if await self._enter_prompt_up():
+                            break
+                    else:
+                        continue
+                    break
+                else:
+                    logger.warning("no 'Press X to Enter' prompt by the sigil; pressing X anyway")
             logger.info(f"on the dungeon sigil; pressing X once and waiting up to {SIGIL_WAIT:.0f}s")
             await self.client.send_key(Keycode.X, 0.1)
             started = time.monotonic()
@@ -2267,6 +2281,15 @@ class Quester:
         logger.warning("stood on the sigil but the dungeon did not start; will re-arm it")
         self._sigil_failed_at = sigil
         return False
+
+    async def _enter_prompt_up(self) -> bool:
+        """The sigil's "Press X to Enter" prompt is showing (we're on it)."""
+        try:
+            if not await ui.is_visible(self.client, ui.NPC_RANGE):
+                return False
+            return "enter" in (await ui.text_at(self.client, ui.NPC_RANGE_TEXT) or "").lower()
+        except Exception:
+            return False
 
     async def _is_dungeon_zone(self, zone: str) -> bool:
         from .dungeons import INSTANCE_ZONES
