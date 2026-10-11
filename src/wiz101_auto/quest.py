@@ -2175,7 +2175,12 @@ class Quester:
         from .teamup import _dungeon_base, beaten_bases, team_list
 
         listed_for = team_list().get(dungeon or "")
-        if listed_for and _dungeon_base(dungeon or "") in beaten_bases():
+        # (And only once the quest log has it done: 'Dying Star Stuff' is in
+        # the book only inside Fort Rachias's Keep, and Ghost Dog's first fight
+        # won there counted as the boss beaten; at the sigil it was "done", the
+        # Keep went back to solo before Ghost Dog's second, harder fight.)
+        if (listed_for and _dungeon_base(dungeon or "") in beaten_bases()
+                and listed_for in set(load_completed()[-50:])):
             got = await self._quests_in_memory()
             if got is not None and listed_for not in {n.strip() for n in got[0]}:
                 # Its quest is done (memory says so; a read inside a dungeon
