@@ -6491,6 +6491,7 @@ class Quester:
         from .teamup import note_team_run
 
         note_team_run(zone)
+        self._team_idle_clock = None  # (the 90 s before leading start now)
         if quest and self.setbacks.deferred.pop(quest, None) is not None:
             self.setbacks.save()
         logger.success(f"team up: in {zone.split('/')[-1]} with a team: back on {quest!r}")
@@ -6649,6 +6650,15 @@ class Quester:
         # The step's own words decide (the book's fight icon is the whole quest's:
         # 'Talk To Athena' was taken for a fight and routed to "her room").
         fight_step = is_combat_objective(objective or "")
+        if here and fight_step and self._team_idle_for() > TEAM_START_AFTER:
+            # The teammate starts nothing (the player: they stood about in the
+            # Eclipse Tower, the bot kept following): we start the fights,
+            # mobs and boss, the normal way; they can walk in.
+            if not getattr(self, "_team_lead_logged", False):
+                self._team_lead_logged = True
+                logger.info(f"no fight with the team for {TEAM_START_AFTER:.0f}s: starting them ourselves")
+            return False
+        self._team_lead_logged = False
         # Straight on to the next fight's room after each fight (known doors),
         # to wait by its circle rather than arrive after it started.
         if here and fight_step and await self._walk_to_boss_room():
@@ -6811,6 +6821,15 @@ class Quester:
         finally:
             self.controller.end_idle()
         return True
+
+    def _team_idle_for(self) -> float:
+        """Seconds in this team dungeon since its last fight (or since entering)."""
+        fights = getattr(self.fighter, "fights", 0) if self.fighter else 0
+        clock = getattr(self, "_team_idle_clock", None)
+        if clock is None or clock[1] != fights:
+            self._team_idle_clock = (time.monotonic(), fights)
+            return 0.0
+        return time.monotonic() - clock[0]
 
     async def _start_stalled_team_boss(self, objective: str, me: XYZ) -> bool:
         """With a team in the boss's dungeon and no fight for TEAM_START_AFTER
