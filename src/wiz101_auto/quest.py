@@ -4318,7 +4318,13 @@ class Quester:
             if seen is not None:
                 self.completions._seen = (seen - {chosen}) | {active}
             self.completions._logged.add(chosen)
-            self._talk_again_after_completion([chosen])
+            # (No second talk: the next one came with the turn-in. Kosmas gave
+            # 'The Horned Moo' with 'From Their Bodies Fly'; the visit back to
+            # him pulled the bot out of the Central Keep three times, and the
+            # story was set aside as stuck.)
+            hand_ins = load_hand_ins()
+            if hand_ins.pop(chosen, None) is not None:
+                save_hand_ins(hand_ins)
             if pin and norm(pin) == norm(chosen):
                 # (The pick moves on with the story: 'Beach Comber' stayed
                 # pinned after it was done, and was "done" again later.)
