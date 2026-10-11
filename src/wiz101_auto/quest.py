@@ -3246,7 +3246,9 @@ class Quester:
             self._boss_win_pending = None
             won_zone, bosses, _at, _deaths = pending
             objective = (await self.objective() or "").lower()
-            if objective and (any(b.lower() in objective for b in bosses) or is_combat_objective(objective)):
+            if not objective:
+                self._boss_win_pending = pending  # (no objective read: decided at the next step)
+            elif any(b.lower() in objective for b in bosses) or is_combat_objective(objective):
                 logger.info(f"{', '.join(sorted(bosses))} beaten, but the objective is still a fight: "
                             "the dungeon isn't done yet")
             else:
