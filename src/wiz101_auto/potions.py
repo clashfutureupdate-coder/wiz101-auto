@@ -23,6 +23,7 @@ from .upkeep import is_free, wait_for_loading
 COMMONS = "WizardCity/WC_Hub"
 HILDA = XYZ(-4398.71, 1016.20, 229.0)  # Hilda Brewer in the Commons
 RETRY_MINUTES = 30.0  # after a failed trip (no gold, shop not found)
+TRAVEL_RETRY_MINUTES = 3.0  # the Commons not reached (Go Home pressed just after the hub button did nothing)
 SHOP_TRIES = 8
 MIN_POTIONS = 3  # the player's: always at least this many (or the most the wizard holds)
 
@@ -44,6 +45,7 @@ class PotionShopper:
         self.client = quester.client
         self.enabled = enabled
         self._retry_at = 0.0
+        self._travel_failed = False
 
     async def tick(self, team_return: bool = False) -> bool:
         """Call while free, outside team dungeons. True if it made the trip."""
@@ -56,8 +58,10 @@ class PotionShopper:
             return False
         if not should_buy_potions(before, most, team_return=team_return):
             return False
+        self._travel_failed = False
         if not await self.trip():
-            self._retry_at = time.monotonic() + RETRY_MINUTES * 60
+            wait = TRAVEL_RETRY_MINUTES if self._travel_failed else RETRY_MINUTES
+            self._retry_at = time.monotonic() + wait * 60
             return True
         after = await self.client.stats.potion_charge()
         if after <= before:
@@ -77,11 +81,13 @@ class PotionShopper:
             logger.info(f"potions: below {MIN_POTIONS}; going to Hilda Brewer in the Commons")
             if not zone.startswith("WizardCity/") or "/interiors/" in zone.lower():
                 if not await home_to_ravenwood(self.q):
+                    self._travel_failed = True
                     return False
             await self.q.go_to_zone(COMMONS)
             await wait_for_loading(self.client)
             if await self.client.zone_name() != COMMONS:
                 logger.warning("potions: could not reach the Commons")
+                self._travel_failed = True
                 return False
         ok = await self.buy()
         if marked and self.q._mark and await is_free(self.client):
