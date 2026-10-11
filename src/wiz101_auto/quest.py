@@ -3586,8 +3586,13 @@ class Quester:
             logger.info(f"not recalling into {marked_zone} alone (team-only dungeon)")
             return False
         # (Only for a mark inside a dungeon: for one outside, at Floating
-        # Mountains' Well entrance, the button took us back into the Well.)
-        if (("/interiors/" in marked_zone.lower() or await self._is_dungeon_zone(marked_zone))
+        # Mountains' Well entrance, the button took us back into the Well. A
+        # sigil's mark is outside, its room an interior or not: Fort
+        # Rachias's Central Keep, and the button took the bot back alone into
+        # the team-only Keep every time it came out to Team Up.)
+        sigil_mark = bool(self._mark and self._mark.kind == "dungeon" and self._mark.zone == marked_zone)
+        if (not sigil_mark
+                and ("/interiors/" in marked_zone.lower() or await self._is_dungeon_zone(marked_zone))
                 and await self._resume_instance(marked_zone)):
             return True
         self.controller.allow_idle(40)
