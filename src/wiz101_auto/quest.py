@@ -2097,7 +2097,17 @@ class Quester:
             logger.info(f"the Team Up queue's quest {queue.get('quest')!r} is done: forgetting the queue")
             clear_queue()
             queue = {}
-        if queue and quest and quest != queue.get("quest") and not is_team_up_zone(zone or ""):
+        from .teamup import _dungeon_base
+
+        here_dungeon = self._dungeon_at(zone or "", sigil) or ""
+        # (The queued dungeon's own sigil, whatever quest led here: 'Moon Aria'
+        # needs the Moon Shrine in Ravik's room, the dungeon queued for under
+        # 'Moonlight Shadows': the Team Up check below, not "not entering",
+        # which never confirmed the queue.)
+        queued_base = _dungeon_base(queue.get("dungeon", "")) if queue else ""
+        same_dungeon = bool(here_dungeon) and _dungeon_base(here_dungeon) == queued_base
+        if (queue and quest and quest != queue.get("quest") and not same_dungeon
+                and not is_team_up_zone(zone or "")):
             # Entering a dungeon drops the Team Up queue (the player: side
             # quests in Khrysalis with no queue for Ghalak's tent): this quest
             # waits, the queue stays.
