@@ -3481,6 +3481,13 @@ class Quester:
         marked_zone = self._mark.zone
         zone = await self.client.zone_name()
         team_back = getattr(self, "_team_return_since", None) is not None
+        if is_team_up_zone(zone or "") and self._mark.kind != "team":
+            # Taken into a team dungeon (the team came while a heal trip's
+            # Recall to Tyrian Gorge was owed: it recalled out, away from the
+            # team, three times): the team first, the old Recall is dropped.
+            logger.info(f"with a team in {(zone or '').split('/')[-1]}: not recalling to {marked_zone}")
+            self._recall_pending = False
+            return False
         if zone == marked_zone:
             self._recall_pending = False  # (back already)
             self._team_return_since = None
