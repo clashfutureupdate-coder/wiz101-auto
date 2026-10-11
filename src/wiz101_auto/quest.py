@@ -4495,6 +4495,12 @@ class Quester:
             hunted_out = time.monotonic() - getattr(self, "_hunt_exhausted", -1e9) < HUNT_EXHAUSTED_SECONDS
             chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
                                   FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=hunted_out)
+            if chosen is None and not hunted_out:
+                # Any side quest in the book, earlier worlds included, beats
+                # fighting for experience (the player: "grinding is very
+                # inefficient; the previous world's side quests instead").
+                chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
+                                      FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=True)
             grinding = chosen is None and bool(all_quests)
             # A side quest from an earlier world while this world's people
             # haven't been asked (the player: in Azteca for Clemente Moraga with
