@@ -77,7 +77,10 @@ class PotionShopper:
         zone = await self.client.zone_name() or ""
         marked = False
         if zone != COMMONS:
-            marked = await self.q._mark_here("travel", require_clear=False)
+            # (Not from Wizard City itself: after a pet trip the Pet Park's
+            # mark replaced the one in Khrysalis the pet trip came from.)
+            if not zone.startswith("WizardCity/"):
+                marked = await self.q._mark_here("travel", require_clear=False)
             logger.info(f"potions: below {MIN_POTIONS}; going to Hilda Brewer in the Commons")
             if not zone.startswith("WizardCity/") or "/interiors/" in zone.lower():
                 if not await home_to_ravenwood(self.q):
