@@ -3157,6 +3157,22 @@ class Quester:
         self._last_rank = -1e9
         return True
 
+    def _note_team_boss_win(self, zone: str):
+        """A fight with a boss in a team dungeon ended and we're alive: its boss
+        is beaten (Ravik: the game tracked Galek's quest meanwhile, so no boss
+        step was seen passing, and the tower stayed team-only)."""
+        fights = getattr(self.fighter, "fights", 0) if self.fighter else 0
+        seen = getattr(self, "_boss_win_seen", None)
+        self._boss_win_seen = (fights, self.controller.deaths)
+        if seen is None or fights == seen[0] or self.controller.deaths != seen[1]:
+            return
+        bosses = getattr(self.fighter, "last_bosses", set())
+        if zone and bosses and is_team_up_zone(zone):
+            from .teamup import mark_beaten
+
+            mark_beaten(zone)
+            logger.info(f"beat {', '.join(sorted(bosses))} in {zone.split('/')[-1]}: its team part is done")
+
     async def _note_defeats(self):
         """After a defeat, count it against the objective; the second one sets the
         quest aside for another questline (until a level-up or an hour passes)."""
@@ -8811,6 +8827,7 @@ class Quester:
             self._last_wisp_scan = time.monotonic()
             self._in_background("wisps", lambda: scan_wisps(self.client))  # learn wisp spawn points
         await self._note_defeats()
+        self._note_team_boss_win(zone_here)
         logger.debug("step: defeats noted")
         await self._boss_health_bar()
         # A patrol walked up while we stood still: step aside (outdoors, and not
