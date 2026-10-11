@@ -1419,8 +1419,12 @@ class Quester:
                 self.objectives_completed += 1
                 logger.success(f"objective done -> now: {objective!r}")
                 beaten_boss = defeat_target(self._last_progress[0] or "") or ""
+                # (Not while another fight follows: Black Shield's step done
+                # in Fort Rachias's Keep, 'Defeat Scorpion Grotesque' next and
+                # Ghost Dog after, marked it beaten and the bot went in alone.)
                 if (zone and is_team_up_zone(zone) and beaten_boss
-                        and beaten_boss in DungeonMemory.load().bosses):
+                        and beaten_boss in DungeonMemory.load().bosses
+                        and not is_combat_objective(objective)):
                     # (A boss's step only: the Cursed Mouse Knights' step done
                     # marked the Eclipse Tower beaten, and it went alone at Ravik.)
                     # A team won this dungeon's fight: what's left of it may
@@ -2209,10 +2213,12 @@ class Quester:
             finally:
                 self.controller.end_idle()
         beaten = beaten_bases()
-        if (is_team_dungeon(dungeon or "") and not is_combat_objective(objective_now)
+        if (is_team_dungeon(dungeon or "") and talk_target(objective_now)
                 and (dungeon or "") not in TEAM_UP_DUNGEONS and _dungeon_base(dungeon or "") in beaten):
             # (Only once a team beat its boss: 'Go To Eclipse Tower' is no
-            # fight by name, and the bot walked alone into Ravik Dreamscape.)
+            # fight by name, and the bot walked alone into Ravik Dreamscape.
+            # And only a talk: 'Use Dying Star Stone' is how Fort Rachias's
+            # Keep begins, and the bot went in alone toward Ghost Dog.)
             # The boss is beaten and the step left is a talk ('Talk To Tymen
             # WhiteFlame' after the team won): in alone, not another queue.
             logger.info(f"{objective_now!r} is no fight: into the team dungeon alone")
@@ -3240,9 +3246,9 @@ class Quester:
             self._boss_win_pending = None
             won_zone, bosses, _at, _deaths = pending
             objective = (await self.objective() or "").lower()
-            if objective and any(b.lower() in objective for b in bosses):
-                logger.info(f"{', '.join(sorted(bosses))} still in the objective: a fight to come, "
-                            "not beaten yet")
+            if objective and (any(b.lower() in objective for b in bosses) or is_combat_objective(objective)):
+                logger.info(f"{', '.join(sorted(bosses))} beaten, but the objective is still a fight: "
+                            "the dungeon isn't done yet")
             else:
                 from .teamup import mark_beaten
 
