@@ -2798,7 +2798,14 @@ class Quester:
             # exit for 5 minutes): out.
             leave = True
         elif is_team_up_zone(zone):
-            leave = False  # never leave a team dungeon
+            # Never leave a team dungeon, unless its part is over: no quest of
+            # it open and the step is outside (the Ant Lion's Warren after Ant
+            # Griffin: 'Talk To Stieg Quicksand' in Crescent Beach, and the
+            # exit was refused for minutes).
+            open_here = dungeon_quest(self.__dict__.get("_last_quests", []), zone, objective_zone,
+                                      skipped=self.setbacks.skipped, entered_with="")
+            leave = (target is not None and target != zone and not is_combat_objective(objective or "")
+                     and open_here is None)
         elif brothers_due and zone in self.__dict__.get("_pre_boss_rooms", load_pre_boss_rooms()).values():
             # In a brother's warren (Ullik's Helgrind Warren) before he's
             # beaten: leaving reset it, and it was walked out of three times.
