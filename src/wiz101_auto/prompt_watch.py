@@ -68,6 +68,10 @@ def should_use(objective: str, prompt: str, title: str) -> bool:
     thing, name = _norm(operated_thing(objective) or ""), _norm(title)
     if not thing or not name or "talk" in (prompt or "").lower() or "press" not in (prompt or "").lower():
         return False
+    if "enter" in (prompt or "").lower():
+        # A dungeon sigil ('Search Interrogation Chamber': "Press X to Enter"):
+        # the step enters it; a second X here every 3s cancelled the countdown.
+        return False
     return name == thing or (min(len(name), len(thing)) >= 5 and (name in thing or thing in name))
 
 

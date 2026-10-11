@@ -16,6 +16,8 @@ def test_use_prompt_for_the_named_object():
     assert should_use("Repair East Bridge in Grand Chasm Past", "Press X to Activate", "East Bridge")
     assert should_use("Lock Vault 1936 in Grand Chasm Past", "Press X to Activate", "Vault 1936")
     assert not should_use("Use Crystal Charger", "Press X to Talk", "Crystal Charger")  # never a talk
+    assert not should_use("Search Interrogation Chamber in Fort Rachias", "Press X to Enter",
+                          "Interrogation Chamber")  # a sigil: the step enters it
     assert not should_use("Use Crystal Charger", "Press X to Activate", "Portal to the Present")
     assert not should_use("Talk To Edrik", "Press X to Activate", "Edrik")
 
