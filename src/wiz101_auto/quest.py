@@ -6711,6 +6711,34 @@ class Quester:
         await self._enter_by_sigil(XYZ(*entry.sigil), zone)
         return True
 
+    async def _drop_done_team_quests(self) -> bool:
+        """Team-list dungeons whose quest is no longer held (memory, not the
+        book: its reads stop short) go back to solo. 'Dying Star Stuff' was
+        done, never logged, and Salicar's Sanctum (Keep_03, a room of the same
+        name) counted as its team dungeon: in, "alone for 61s", out, again.
+        True if this zone stopped being a team zone. At most once a minute."""
+        if time.monotonic() - self.__dict__.get("_team_drop_at", -1e9) < 60:
+            return False
+        self._team_drop_at = time.monotonic()
+        from .teamup import TEAM_LIST_FILE, team_list
+
+        teams = team_list()
+        got = await self._quests_in_memory()
+        if not teams or got is None or not got[0]:
+            return False
+        held = {norm(n) for n in got[0]}
+        gone = [d for d, q in teams.items() if q and norm(q) not in held]
+        if not gone:
+            return False
+        zone = await self.client.zone_name() or ""
+        for d in gone:
+            logger.info(f"{teams.pop(d)!r} is no longer held: {d.split('/')[-1]} is no team dungeon any more")
+        try:
+            TEAM_LIST_FILE.write_text(json.dumps(teams, indent=1), encoding="utf-8")
+        except OSError:
+            return False
+        return not is_team_up_zone(zone)
+
     def _team_arrived(self, zone: str):
         """In the dungeon we queued for (the team came): its quest is the
         main quest again, the queue is done."""
@@ -6756,6 +6784,8 @@ class Quester:
         from .collect import duel_circles
         from .teamup import team_fight_at, teammates
 
+        if await self._drop_done_team_quests():
+            return False  # (no team dungeon any more: the usual step)
         me = await self._position()
         mates = await teammates(self.client, me)
         now = time.monotonic()
