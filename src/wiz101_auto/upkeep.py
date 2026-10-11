@@ -121,7 +121,7 @@ async def potion_ok(client, tripped: bool = False) -> bool:
 # A team dungeon with no healing between fights (the Waterworks, the
 # player's rule): a potion after a fight only below this much health, and the
 # last one kept for right before the final boss (Sylster Glowstorm).
-TEAM_POTION_BELOW = 0.35
+TEAM_POTION_BELOW = 0.6  # (0.35 left it to start the next fight at half health: the player)
 LAST_RESORT_POTION_BELOW = 0.3  # no wisps anywhere to go to: a potion below this health
 TEAM_POTIONS_KEPT = 1  # for the final fight
 FINAL_POTION_BELOW = 0.8  # before the final boss: the kept potion goes in below this

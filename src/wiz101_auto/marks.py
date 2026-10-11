@@ -107,3 +107,24 @@ def recall_is_faster(
     if walk is None:
         return via == 0
     return via + RECALL_HOPS < walk
+
+
+# Defeated in a team dungeon with a teammate fighting on (the player: back to
+# them fast, it isn't fair to leave them alone): heal where we respawn, then
+# Recall straight back in. No trips to other zones' wisps, no shopping.
+TEAM_RETURN_HEALTH = 0.6  # healthy enough: Recall at once
+TEAM_RETURN_BUDGET = 75.0  # seconds away: then back in at TEAM_RETURN_MIN_HEALTH
+TEAM_RETURN_MIN_HEALTH = 0.25
+TEAM_RETURN_CAP = 180.0  # seconds away: back in whatever the health
+
+
+def team_return_action(hp: float, charges: float, away_s: float) -> str:
+    """After a defeat in a team dungeon: "recall", "potion" (drink one, then
+    decide again) or "heal" (this zone's wisps, or wait a moment)."""
+    if hp >= TEAM_RETURN_HEALTH:
+        return "recall"
+    if charges >= 1.0:
+        return "potion"
+    if away_s >= TEAM_RETURN_CAP or (away_s >= TEAM_RETURN_BUDGET and hp >= TEAM_RETURN_MIN_HEALTH):
+        return "recall"
+    return "heal"

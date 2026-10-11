@@ -1,7 +1,7 @@
-"""Potion refills: out of potions, buy a full set from Hilda Brewer.
+"""Potion refills: low on potions, buy a full set from Hilda Brewer.
 
 The bot drank the potions it had and then went on without (a low-health
-start lost fights). At a free moment out of dungeons, with no potion left:
+start lost fights). At a free moment out of dungeons, below MIN_POTIONS:
 mark, go to the Commons by the gates (Go Home first from another world),
 open Hilda Brewer's shop, Fill All, Buy, close, Recall back. The shop's
 window names and Hilda's spot are from Deimos (src/utils.py buy_potions,
@@ -24,6 +24,18 @@ COMMONS = "WizardCity/WC_Hub"
 HILDA = XYZ(-4398.71, 1016.20, 229.0)  # Hilda Brewer in the Commons
 RETRY_MINUTES = 30.0  # after a failed trip (no gold, shop not found)
 SHOP_TRIES = 8
+MIN_POTIONS = 3  # the player's: always at least this many (or the most the wizard holds)
+
+
+def should_buy_potions(charge: float, most: float, in_team_dungeon: bool = False,
+                       team_return: bool = False) -> bool:
+    """A trip to Hilda Brewer now? Below MIN_POTIONS (or below the most the
+    wizard can hold, if fewer), but never with a team: not from inside a team
+    dungeon (the team moves on without us) and not on the way back to one
+    after a defeat (heal and Recall straight back in: the player's rule)."""
+    if in_team_dungeon or team_return or most < 1:
+        return False
+    return charge < min(MIN_POTIONS, most)
 
 
 class PotionShopper:
@@ -33,19 +45,17 @@ class PotionShopper:
         self.enabled = enabled
         self._retry_at = 0.0
 
-    async def tick(self) -> bool:
-        """Call while free, outside dungeons. True if it made the trip."""
+    async def tick(self, team_return: bool = False) -> bool:
+        """Call while free, outside team dungeons. True if it made the trip."""
         if not self.enabled or time.monotonic() < self._retry_at:
             return False
         try:
-            if await self.client.stats.potion_charge() >= 1.0:
-                return False
+            before = await self.client.stats.potion_charge()
             most = await self.client.stats.potion_max()
         except Exception:
             return False
-        if most < 1:
+        if not should_buy_potions(before, most, team_return=team_return):
             return False
-        before = await self.client.stats.potion_charge()
         if not await self.trip():
             self._retry_at = time.monotonic() + RETRY_MINUTES * 60
             return True
@@ -64,7 +74,7 @@ class PotionShopper:
         marked = False
         if zone != COMMONS:
             marked = await self.q._mark_here("travel", require_clear=False)
-            logger.info("potions: out of potions; going to Hilda Brewer in the Commons")
+            logger.info(f"potions: below {MIN_POTIONS}; going to Hilda Brewer in the Commons")
             if not zone.startswith("WizardCity/") or "/interiors/" in zone.lower():
                 if not await home_to_ravenwood(self.q):
                     return False

@@ -352,6 +352,7 @@ class Fighter(CombatHandler):
         self.last_boss_names: list[str] = []  # bosses in the current/last fight (farm runs end on one)
         self.last_enemy_names: list[str] = []  # enemies of the current/last fight
         self.last_bosses: set[str] = set()  # which of them the game marks as bosses
+        self.last_team_alive = False  # a teammate standing at the last round read
         self.may_flee = None  # async () -> bool: whether fleeing is allowed here
         self._had_boss = False
         self._items_seen: dict = {}  # template name -> an item card seen in this fight
@@ -758,6 +759,7 @@ class Fighter(CombatHandler):
                                    f"and never {name} again this fight")
 
             _note_unknown_cards(battle)
+            self.last_team_alive = any(not a.is_minion and not a.is_dead for a in battle.allies)
             hand = ", ".join(f"{c.name}{'' if c.castable else '(x)'}" for c in battle.cards)
             logger.debug(f"hand: {hand}; deck left: {len(battle.upcoming)}")
             plan = plan_fight(battle, self.strategy).text

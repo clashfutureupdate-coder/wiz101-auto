@@ -196,6 +196,7 @@ def install(client):
         if far and math.dist((after.x, after.y), (before.x, before.y)) >= NOT_TAKEN:
             client._refused_in_row = 0
         if far and math.dist((after.x, after.y), (before.x, before.y)) < NOT_TAKEN:
+            await close_blocking_windows()
             try:
                 await wizwalker_teleport(xyz, *args, purge_on_after_unuser_fixer_timeout=RETRY_WAIT, **kwargs)
             except TypeError:  # a teleport without WizWalker's options (tests)
@@ -210,6 +211,28 @@ def install(client):
             logger.info(f"teleport to ({xyz.x:.0f}, {xyz.y:.0f}) didn't happen; retried with a longer wait: "
                         f"{'it worked' if took else 'still refused'}")
         return result
+
+    async def close_blocking_windows() -> bool:
+        """A refused jump with a window up: the Spiral Map (open at the
+        Khrysalis hub's world gate after a defeat) refused every teleport for
+        two minutes, wisps and gates alike. Closed before the retry."""
+        from . import ui
+
+        try:
+            if await ui.is_visible(client, ui.SPIRAL_DOOR_TELEPORT):
+                logger.info("teleport refused with the Spiral Map open: closing it")
+                await ui.click(client, ui.SPIRAL_DOOR_EXIT)
+                await asyncio.sleep(1.0)
+                return True
+            if getattr(client, "_refused_in_row", 0) >= 1:
+                closed = await ui.close_stray_windows(client)
+                if closed or await ui.close_menus(client):
+                    logger.info(f"teleport refused with windows open: closed {', '.join(closed) or 'menus'}")
+                    await asyncio.sleep(0.5)
+                    return True
+        except Exception as exc:
+            logger.debug(f"closing windows after a refused teleport failed: {exc!r}")
+        return False
 
     async def _hazards() -> list:
         """Enemies and duel-circle seats, read now."""

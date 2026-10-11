@@ -39,7 +39,8 @@ def test_back_at_the_entrance_after_a_defeat_keeps_the_place():
 def test_team_potions_keep_one_for_the_final_boss():
     from wiz101_auto.upkeep import team_potion
 
-    assert not team_potion(0.5, 3)  # above 35%: saved
+    assert not team_potion(0.7, 3)  # above 60%: saved
+    assert team_potion(0.5, 3)  # half health: the next fight is risky
     assert team_potion(0.3, 3)
     assert team_potion(0.3, 2)
     assert not team_potion(0.2, 1)  # the last one is Sylster's
