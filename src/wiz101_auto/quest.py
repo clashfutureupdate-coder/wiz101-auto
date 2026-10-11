@@ -6727,7 +6727,11 @@ class Quester:
         if not teams or got is None or not got[0]:
             return False
         held = {norm(n) for n in got[0]}
-        gone = [d for d, q in teams.items() if q and norm(q) not in held]
+        missing = {d for d, q in teams.items() if q and norm(q) not in held}
+        # (Missing on two reads a minute apart: one read during a zone load
+        # can come up short; 'Hear Me Roar' was dropped while in the book.)
+        gone = sorted(missing & self.__dict__.get("_team_missing", set()))
+        self._team_missing = missing
         if not gone:
             return False
         zone = await self.client.zone_name() or ""
