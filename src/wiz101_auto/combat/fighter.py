@@ -563,6 +563,12 @@ class Fighter(CombatHandler):
                     done = self._out_of_battle
                     if await ui.press_modal_button(self.client, box, "centerButton", done=done):
                         logger.info(f"confirmed fleeing ({how})")
+                        from ..travel_data import note_zone_jump
+
+                        # (Fleeing can put us in another zone: Crescent Beach's
+                        # Sand Crawler fled to the Khrysalis hub, "learned" as a
+                        # gate there, and the world gate's Spiral Map opened.)
+                        note_zone_jump()
                         self._flee_method = how
                         if spot is not None:
                             self._flee_spot = spot

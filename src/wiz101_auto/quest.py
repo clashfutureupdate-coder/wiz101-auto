@@ -208,6 +208,7 @@ SEEK_CLEAR = 1200.0  # no other kind of enemy this close to a spot we go to
 LONE_TARGET_CLEARANCE = 800.0  # going after an enemy: no other kind this close to it
 ENGAGE_BACKOFF = 400.0  # landing on it started no fight: walk in from this far, times the misses
 ENGAGE_BACKOFF_MAX = 2400.0
+TALK_FIGHT_TRIES = 2  # "Talk To X" with X a mob here: fights started for it before talking instead
 ENGAGE_CIRCLE_WAIT = 25.0  # landed on a duel circle with no fight yet: wait this long for it
 WALKED_CLOSE = 250.0  # a walked path ended this near its target: arrived
 WALK_IN_MIN = 600.0  # a walk-in starts at least this far from the boss
@@ -5802,6 +5803,13 @@ class Quester:
         mob = await self._talk_target_enemy(objective)
         if mob is None:
             return False
+        # (Not when an NPC of that name is here too, nor after a few tries:
+        # "Talk To Sand Crawler" in Crescent Beach is a talking stand-in among
+        # the Sand Crawler mobs; their fights were fled as not the quest's.)
+        tries = self.__dict__.setdefault("_talk_fights", {})
+        if tries.get(objective, 0) >= TALK_FIGHT_TRIES or await self._npc_named(talk_target(objective) or ""):
+            return False
+        tries[objective] = tries.get(objective, 0) + 1
         logger.info(f"{talk_target(objective)} is an enemy here: fighting him to get on with {objective!r}")
         allow_engage(self.client)
         await self.client.teleport(await mob.location())
