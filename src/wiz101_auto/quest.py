@@ -46,7 +46,15 @@ from .entitymap import DoorMemory, EntityMap
 from .entitymap import scan as scan_entities
 from .farm import Farm
 from .givers import QuestGivers
-from .marks import RETURN_KINDS, Mark, load_mark, recall_is_faster, save_mark, should_travel_mark
+from .marks import (
+    RETURN_KINDS,
+    Mark,
+    load_mark,
+    recall_is_faster,
+    save_mark,
+    should_travel_mark,
+    team_return_action,
+)
 from .npc import ServicesMenu
 from .questlist import SIDE_WORLDS, CompletionTracker, load_completed, load_quest_list, norm
 from .safe_teleport import allow_close_landing, allow_engage, teleport_aborted, walk_zone
@@ -382,7 +390,7 @@ FAR_SWEEP_SPACING = 3000.0  # pickups load within roughly this range
 FIND_AT_MARKER = 500.0  # this near a Find objective's marker: a prompt there is the way on
 COMPANY_RANGE = 1200.0  # another enemy this near a boss joins its fight: the AoE deck
 NOT_SAME_MOB = 5.0  # (the boss itself)
-RECALL_KINDS = (*RETURN_KINDS, "room")  # marks a defeat or heal trip Recalls back to
+RECALL_KINDS = (*RETURN_KINDS, "room", "team")  # marks a defeat or heal trip Recalls back to
 RECALL_TRIES = 3  # failed Recalls to the mark before giving it up
 RECALL_PENDING_FILE = Path("state") / "recall_pending.json"  # a defeat's Recall to the dungeon mark is due
 SCOUT_MAX = 60  # squares visited from under the map when scouting a zone for an item
@@ -2182,6 +2190,18 @@ class Quester:
                 if load_queue().get("quest") == listed_for:
                     clear_queue()
 
+        shop = getattr(self, "potions", None)
+        if shop and getattr(self, "_team_return_since", None) is None:
+            # Topped up to MIN_POTIONS before going in (the player's rule):
+            # the trip Recalls back here, the sigil next step.
+            self.controller.allow_idle(300)
+            try:
+                if await shop.tick():
+                    return True
+            except Exception as exc:
+                logger.opt(exception=exc).warning("potion trip failed")
+            finally:
+                self.controller.end_idle()
         beaten = beaten_bases()
         if (is_team_dungeon(dungeon or "") and not is_combat_objective(objective_now)
                 and (dungeon or "") not in TEAM_UP_DUNGEONS and _dungeon_base(dungeon or "") in beaten):
@@ -2426,7 +2446,7 @@ class Quester:
         try:
             objective = await self.objective() if objective is None else objective
             zone = await self.client.zone_name() or ""
-            if is_team_up_zone(zone):
+            if is_team_up_zone(zone) and kind != "team":
                 return False  # the mark stays at the sigil outside (Recall can't take us in alone)
             if is_hub(zone) and kind != "dungeon":
                 # Never mark a hub: a defeat or the hub button brings us here
@@ -2467,6 +2487,8 @@ class Quester:
                 logger.info(f"marked this spot in {zone} before the fight (Recall back here after a defeat)")
             elif kind == "room":
                 logger.info(f"marked this spot in {zone} (Recall back here after healing)")
+            elif kind == "team":
+                logger.info(f"marked this spot in {zone} with the team (Recall back to them after a defeat)")
             else:
                 logger.info(f"marked this spot in {zone} before a long trip (Recall when it's on the way)")
             return True
@@ -2664,6 +2686,8 @@ class Quester:
         # one Recall instead of walking over from the Ironworks.)
         if not self._mark or self._mark.kind not in RECALL_KINDS or self._recalled_for == objective:
             return False
+        if self._mark.kind == "team":
+            return False  # (only to go back to the team after a defeat)
         if time.monotonic() < self._recall_blocked_until:
             return False
         dest = objective_zone(objective)
@@ -3217,9 +3241,20 @@ class Quester:
         from .teamup import set_team_size, team_key, team_size
 
         key = team_key(death_zone) if death_zone else None
+        # Defeated with a teammate still fighting (the player: Ghost Dog, the
+        # other player won while the bot wandered the hub for wisps and sat on
+        # the Spiral Map): heal here, quickly, and Recall straight back in.
+        mate_on = (bool(death_zone) and is_team_up_zone(death_zone)
+                   and getattr(self.fighter, "last_team_alive", False))
+        self._team_return_since = time.monotonic() if mate_on else None
+        if mate_on:
+            self._team_heal_said = False
+            logger.info("defeated with a teammate fighting on: healing here, then straight back to the team")
         # (Only a loss with teammates: Ravik beat it alone in the Eclipse
-        # Tower's team room, and the Team Up there was raised to 4.)
-        if key and team_size(key) < TEAM_SIZE_AFTER_LOSS and getattr(self.fighter, "last_with_team", False):
+        # Tower's team room, and the Team Up there was raised to 4. Not when
+        # a teammate fought on: no wipe.)
+        if (key and team_size(key) < TEAM_SIZE_AFTER_LOSS and not mate_on
+                and getattr(self.fighter, "last_with_team", False)):
             # Lost with a team (the player: Xibalba's fight is tough; a full
             # team of 4 there): the next Team Up there waits for 4.
             set_team_size(key, TEAM_SIZE_AFTER_LOSS)
@@ -3382,12 +3417,15 @@ class Quester:
             return False  # only after a defeat or a heal trip: otherwise we left on purpose
         marked_zone = self._mark.zone
         zone = await self.client.zone_name()
+        team_back = getattr(self, "_team_return_since", None) is not None
         if zone == marked_zone:
             self._recall_pending = False  # (back already)
+            self._team_return_since = None
             return False
         from .teamup import in_team_list
 
-        if self._mark.kind == "dungeon" and self._dungeon and in_team_list(self._dungeon[0]):
+        if (self._mark.kind == "dungeon" and self._dungeon and in_team_list(self._dungeon[0])
+                and not team_back):
             # A team-only dungeon now (Ahuizotl's Well): no going back in alone
             # (the dungeon-return button took us into Clemente Moraga's cave).
             logger.info(f"not going back into {self._dungeon[0].split('/')[-1]} alone (a team dungeon)")
@@ -3406,8 +3444,11 @@ class Quester:
         # dungeon, and the quest shown changes with it (the player's rule:
         # heal, then back to the mark, no matter what).
         if not await is_free(self.client):
-            return False
-        if self.upkeep is not None:
+            return team_back  # (a team waiting: nothing else meanwhile)
+        if team_back and self.upkeep is not None:
+            if not await self._team_return_heal():
+                return True
+        elif self.upkeep is not None:
             hp, mana = await health_mana(self.client)
             if self.upkeep.needs_recovery(hp, mana):
                 return False  # healed first (no mark), then back to the mark (the player's rule)
@@ -3418,6 +3459,7 @@ class Quester:
         if await self._recall(marked_zone, what):
             self._recall_fails = 0
             self._recall_pending = False
+            self._team_return_since = None
             if kind == "dungeon":
                 self._retire_dungeon_mark()  # the dungeon resets: its sigil is a fresh start
             return True
@@ -3428,10 +3470,50 @@ class Quester:
                            "(and the mark: the game has none there)")
             self._recall_fails = 0
             self._recall_pending = False
+            self._team_return_since = None
             # (Kept, every restart tried it again: Ogun's shack, long after him.)
             self._mark = None
             save_mark(None)
         return True
+
+    async def _team_return_heal(self) -> bool:
+        """Defeated with the team fighting on: healed enough to Recall back
+        (True), else a potion or this zone's wisps first, never a trip to
+        another zone or a shop (marks.team_return_action's time budget)."""
+        hp, _mana = await health_mana(self.client)
+        charges = await self.client.stats.potion_charge() if self.upkeep.use_potions else 0.0
+        away = time.monotonic() - self._team_return_since
+        act = team_return_action(hp, charges, away)
+        if act == "recall":
+            return True
+        if act == "potion":
+            logger.info(f"back to the team: a potion first (hp {hp:.0%}, {charges:.0f} left)")
+            await ui.click(self.client, ui.POTION_BUTTON)
+            await asyncio.sleep(1.5)
+            return False
+        if not getattr(self, "_team_heal_said", False):
+            self._team_heal_said = True
+            logger.info(f"back to the team: healing from this zone's wisps first ({hp:.0%} health)")
+        self.controller.allow_idle(40)
+        try:
+            if not await heal_in_room(self.client, self.upkeep, rounds=2):
+                await asyncio.sleep(3.0)  # (no wisps: health comes back by itself)
+        finally:
+            self.controller.end_idle()
+        return False
+
+    async def _mark_team_room(self, zone: str):
+        """With the team in a room: mark it, so a defeat's Recall takes us
+        straight back to them (the dungeon stays open while they're inside).
+        Once per room."""
+        m = self._mark
+        if not zone or (m and m.kind == "team" and m.zone == zone) or self._recall_pending:
+            return
+        tried = self.__dict__.setdefault("_team_marked", set())
+        if zone in tried or await self.client.in_battle() or not await is_free(self.client):
+            return
+        tried.add(zone)
+        await self._mark_here("team", require_clear=False)
 
     async def _resume_instance(self, marked_zone: str) -> bool:
         """The compass's dungeon-return button (a red X beside Recall, shown
@@ -6592,6 +6674,7 @@ class Quester:
             self._mate_last_seen = now
             self.client._players_seen_at = now  # (walk-only while they're around)
             _save_team_state(await self.client.zone_name() or "", now)
+            await self._mark_team_room(await self.client.zone_name() or "")
         elif not self._team_with_us and _team_state_recent(await self.client.zone_name() or ""):
             # A restart inside the dungeon forgot the team (it then left after
             # 90 s as "alone"): a teammate was seen here minutes ago.
@@ -9084,7 +9167,7 @@ class Quester:
         if shop and not team and not await self._in_dungeon(zone_now) and not no_return(zone_now):
             self.controller.allow_idle(300)  # the trip to the Commons and back
             try:
-                acted = await shop.tick()
+                acted = await shop.tick(team_return=getattr(self, "_team_return_since", None) is not None)
             except Exception as exc:
                 logger.opt(exception=exc).warning("potion trip failed")
                 acted = True
