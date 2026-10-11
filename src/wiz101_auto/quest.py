@@ -1409,8 +1409,11 @@ class Quester:
             if self._last_progress[0] and objective != self._last_progress[0]:
                 self.objectives_completed += 1
                 logger.success(f"objective done -> now: {objective!r}")
-                if (zone and is_team_up_zone(zone) and is_combat_objective(self._last_progress[0])
-                        and not is_combat_objective(objective)):
+                beaten_boss = defeat_target(self._last_progress[0] or "") or ""
+                if (zone and is_team_up_zone(zone) and beaten_boss
+                        and beaten_boss in DungeonMemory.load().bosses):
+                    # (A boss's step only: the Cursed Mouse Knights' step done
+                    # marked the Eclipse Tower beaten, and it went alone at Ravik.)
                     # A team won this dungeon's fight: what's left of it may
                     # be done alone (Tymen's talk after the team beat him).
                     from .teamup import mark_beaten
