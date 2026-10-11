@@ -6679,6 +6679,11 @@ class Quester:
                 return False
             if tries == TEAM_TALK_TRIES + 1:
                 logger.info(f"{objective!r} isn't moving on (waits on the team?): going after the team")
+        if here and not farming and not fight_step and objective and not talk_target(objective):
+            # This dungeon's own step (the player: "use the Moon Shrine, it's
+            # right next to it" while the bot followed the teammate about):
+            # done by us too, the normal way.
+            return False
         # Anything else not a fight (collect tokens, use things) counts for the
         # whole team: leave it to the others and stay with them.
         self._last_progress_time = time.monotonic()  # waiting on the team isn't a stall
