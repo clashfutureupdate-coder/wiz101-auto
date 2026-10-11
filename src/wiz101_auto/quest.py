@@ -8973,6 +8973,16 @@ class Quester:
                     await asyncio.sleep(1.5)
         if not heal_now:
             logger.debug("in the dungeon with no fight ahead: finishing the objective before healing")
+        if (heal_now and in_dungeon and self.upkeep and self.upkeep.use_potions
+                and await self.client.stats.potion_charge() >= 1.0):
+            # A potion before any trip out (the player: at 20% after the
+            # fights it stood still, then left the teammate for the hub; and
+            # leaving resets the dungeon).
+            hp, mana = await health_mana(self.client)
+            logger.info(f"drinking a potion in the dungeon (hp {hp:.0%}, mana {mana:.0%}) instead of leaving")
+            await ui.click(self.client, ui.POTION_BUTTON)
+            await asyncio.sleep(1.5)
+            return
         if heal_now and in_dungeon and not await self._boss_settled(await self.objective() or ""):
             return  # (no trip out yet: the boss's spawn cutscene)
         if heal_now and self.healer and in_dungeon and await self.healer.between_fights(zone_now):
