@@ -52,13 +52,59 @@ async def wait_until_free(client, timeout: float = 60.0) -> bool:
     return False
 
 
+AREA_PROBLEM = "issue occurred with that area"  # the loading screen's PROBLEM box
+AREA_PROBLEM_AFTER = 8.0  # seconds of loading before looking for it (then every 5 s)
+AREA_PROBLEM_BUTTONS = ("centerButton", "okButton", "OkButton", "btnOk", "rightButton", "leftButton")
+
+
+def is_area_problem(text: str) -> bool:
+    """The game's "Sorry young wizard, an issue occurred with that area" box."""
+    return AREA_PROBLEM in (text or "").lower()
+
+
+async def area_problem(client) -> bool:
+    """A loading screen stuck behind the PROBLEM box (Crescent Beach's gate to
+    Fort Rachias, 14:47: the bot waited on it for minutes): press its OK. True
+    if it was up. Its window tree goes to state/area_problem_window.txt."""
+    from pathlib import Path
+
+    box = await ui.modal_box(client)
+    if box is not None and is_area_problem(await ui.modal_text(box)):
+        lines = await ui.dump_tree(box, max_depth=8)
+        pressed = await ui.confirm_modal(client, AREA_PROBLEM_BUTTONS)
+    else:
+        lines = await ui.dump_tree(client.root_window, max_depth=10)
+        if not any(is_area_problem(line) for line in lines):
+            return False
+        pressed = False
+        for name in AREA_PROBLEM_BUTTONS:
+            if await ui.click_named(client, name):
+                pressed = True
+                break
+    try:
+        Path("state", "area_problem_window.txt").write_text("\n".join(lines), encoding="utf-8")
+    except OSError:
+        pass
+    logger.warning("the game couldn't load that area ('an issue occurred with that area'): "
+                   + ("pressed OK" if pressed else "no OK button found"))
+    return True
+
+
 async def wait_for_loading(client, appear_timeout: float = 2.0):
-    """Give a loading screen a moment to appear, then wait for it to finish."""
+    """Give a loading screen a moment to appear, then wait for it to finish
+    (pressing OK on the game's PROBLEM box if a load hangs behind it)."""
     loop = asyncio.get_running_loop()
     end = loop.time() + appear_timeout
     while loop.time() < end and not await client.is_loading():
         await asyncio.sleep(0.1)
+    look = loop.time() + AREA_PROBLEM_AFTER
     while await client.is_loading():
+        if loop.time() >= look:
+            look = loop.time() + 5.0
+            try:
+                await area_problem(client)
+            except Exception as exc:
+                logger.debug(f"area problem check failed: {exc!r}")
         await asyncio.sleep(0.2)
 
 
