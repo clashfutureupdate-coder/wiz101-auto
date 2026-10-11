@@ -208,6 +208,7 @@ SEEK_CLEAR = 1200.0  # no other kind of enemy this close to a spot we go to
 LONE_TARGET_CLEARANCE = 800.0  # going after an enemy: no other kind this close to it
 ENGAGE_BACKOFF = 400.0  # landing on it started no fight: walk in from this far, times the misses
 ENGAGE_BACKOFF_MAX = 2400.0
+ENGAGE_CIRCLE_WAIT = 25.0  # landed on a duel circle with no fight yet: wait this long for it
 WALKED_CLOSE = 250.0  # a walked path ended this near its target: arrived
 WALK_IN_MIN = 600.0  # a walk-in starts at least this far from the boss
 MAIN_LOSSES_NO_LADDER = 5  # a story fight lost this often with one fixed deck: side quests, then again
@@ -8035,11 +8036,34 @@ class Quester:
             allow_engage(self.client)  # this teleport is meant to start the fight
             await self.client.teleport(pos)
             await asyncio.sleep(3.0)
+            await self._await_circle_fight()
         if await self.client.in_battle() or not await is_free(self.client):
             misses.pop(key, None)  # (a cutscene or dialogue: the dialogue loop has it)
             return True
         misses[key] = miss + 1
         return False
+
+    async def _await_circle_fight(self):
+        """Landed on a duel circle and no fight yet: wait for it a while
+        (Crescent Beach's Sand Crawlers rise out of the sand: their fight
+        showed ~30 s after a landing, when the next step had moved on and fled
+        it; ten landings on them and the main quest was set aside)."""
+        from .collect import duel_circles
+        from .safe_teleport import ON_CIRCLE
+
+        end = time.monotonic() + ENGAGE_CIRCLE_WAIT
+        self.controller.allow_idle(ENGAGE_CIRCLE_WAIT + 5)
+        try:
+            while time.monotonic() < end and not await self.client.in_battle():
+                me = await self._position()
+                circles = await duel_circles(self.client)
+                if not any(math.dist((me.x, me.y), c[:2]) < ON_CIRCLE for c in circles):
+                    return
+                await asyncio.sleep(1.0)
+        except Exception:
+            return
+        finally:
+            self.controller.end_idle()
 
     def _walk_in_origin(self, target: str, pos: XYZ, zone: str) -> XYZ | None:
         """Where a walk up to `target` starts: our last fight in this zone, else
