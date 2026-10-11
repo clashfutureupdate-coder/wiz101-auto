@@ -2149,6 +2149,7 @@ class Quester:
             self.setbacks.save()
             self._ranked_for = None
             self._last_rank = -1e9
+            self._queue_kept_at = time.monotonic()
             return False
         # An open menu (e.g. the spellbook) hides the "press X" prompt.
         await close_spellbook(self.client)
@@ -5647,6 +5648,11 @@ class Quester:
         zone's duel circle first (Gurtok Firebender guards the crystal that
         opens Malistaire's door). Goes to the circle remembered in the
         entity map, then onto the enemy standing on it. True if it acted."""
+        if time.monotonic() - self.__dict__.get("_queue_kept_at", -1e9) < 30:
+            # (Not a locked door: the dungeon was skipped to keep the Team Up
+            # queue. Galek's sigil, then fights with Flame Legs on Last Wood's
+            # circle, fled, every ten minutes.)
+            return False
         circles = (self.entity_map.zones.get(zone, {}) or {}).get("Duel Circle") or []
         if not circles or not self._may_try(objective, zone, "zone_boss"):
             return False
