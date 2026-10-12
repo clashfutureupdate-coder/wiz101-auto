@@ -111,3 +111,12 @@ def test_handed_in_quest_logged_at_once(tmp_path):
     assert t.confirm({"Cor Serpentis"}) == []  # (once)
     assert t.update({"Into the Sea"}) == []  # (no second logging from the two-reads rule)
     assert t.update({"Into the Sea"}) == []
+
+
+def test_lost_cards_come_back():
+    from wiz101_auto.deck_keeper import restore_counts
+
+    base = {"Gargantuan": 2, "Humongofrog": 1, "Mythblade": 2, "Orthrus - T02 - A": 2, "Feint": 1,
+            "Spirit Blade": 1}
+    got = restore_counts({"Gargantuan": 1, "Feint": 3}, base)
+    assert got == {**base, "Feint": 3}

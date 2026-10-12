@@ -726,6 +726,10 @@ class Fighter(CombatHandler):
                 logger.warning("no attack cards left in hand or deck: fleeing to try again")
                 # (Even in a dungeon with no mark: passing until we die gains
                 # nothing, the player's rule; fleeing keeps us in the room.)
+                # (Who this fight was with, before the round's usual note: a
+                # round-1 flee from Zuzka was put down to a Spider Adept.)
+                self.last_enemy_names = [e.name for e in battle.enemies]
+                self.last_bosses = {e.name for e in battle.enemies if e.is_boss}
                 fled = await self._flee()
                 self.fled = self.fled or fled
                 if fled:

@@ -136,6 +136,16 @@ def _load(path: Path) -> dict:
 
 ADDED_FILE = Path("state") / "deck_added.json"  # extras the keeper put in (taken out after)
 
+def restore_counts(target: dict[str, int], counts: dict[str, int]) -> dict[str, int]:
+    """`target` with each of the player's `counts` brought back up (never
+    down: copies added on purpose stay)."""
+    out = dict(target)
+    for name, copies in counts.items():
+        if out.get(name, 0) < copies:
+            out[name] = copies
+    return out
+
+
 class DeckKeeper:
     def __init__(self):
         self._checked = 0.0
@@ -195,6 +205,10 @@ class DeckKeeper:
                         pass
                 keep = {n.lower() for n in baseline[role]} | {n.lower() for n in extra}
                 target = {n: c for n, c in target.items() if _named(n, keep)}
+                # Cards lost from the deck item come back to the player's
+                # counts (after the Khrysalis dreams the Dragonfire Deck read
+                # Gargantuan x1, Feint x3: no attacks, every boss fled).
+                target = restore_counts(target, (general.get("baseline_counts") or {}).get(role) or {})
             for key, base in list(self._added.items()):
                 r, _, name = key.partition(":")
                 if r != role or name in extra:
