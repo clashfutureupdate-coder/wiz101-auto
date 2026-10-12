@@ -42,8 +42,20 @@ def test_left_team_run_lately(tmp_path, monkeypatch):
 
     f = tmp_path / "team_run.json"
     monkeypatch.setattr(teamup, "TEAM_RUN_FILE", f)
-    f.write_text(json.dumps({"zones": ["Khrysalis/Interiors/KR_Z05_I11_Keep_03"], "at": 1000.0}))
+    room = "Khrysalis/Interiors/KR_Z05_I11_Keep_03"
+    f.write_text(json.dumps({"zones": [room], "at": 1000.0, "mate_at": 1000.0}))
     assert teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z05_I11_Keep_03", now=1100.0)
     assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z05_I11_Keep_03",
                                            now=1000.0 + teamup.RESUME_AFTER_DEFEAT + 1)
     assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z06_I02_AntLionWarren", now=1100.0)
+
+
+def test_no_resume_without_a_teammate_seen(tmp_path, monkeypatch):
+    import json
+
+    from wiz101_auto import teamup
+
+    f = tmp_path / "team_run.json"
+    monkeypatch.setattr(teamup, "TEAM_RUN_FILE", f)
+    f.write_text(json.dumps({"zones": ["Khrysalis/Interiors/KR_Z06_I01_BeastControl"], "at": 1000.0}))
+    assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z06_I01_BeastControl", now=1100.0)

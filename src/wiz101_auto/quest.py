@@ -3614,6 +3614,7 @@ class Quester:
         if not await ui.click_named(self.client, "ResumeInstanceButton"):
             return False
         logger.info("pressed the dungeon-return button (back into the dungeon we left)")
+        self._resumed_alone_at = time.monotonic()
         self.controller.allow_idle(40)
         try:
             await asyncio.sleep(1.0)
@@ -6782,6 +6783,10 @@ class Quester:
         queue = load_queue()
         if not queue or zone != queue.get("dungeon"):
             return
+        if time.monotonic() - self.__dict__.get("_resumed_alone_at", -1e9) < 120:
+            # (Back in by the dungeon-return button, alone: not the team. It
+            # cleared the Great Beast's queue and the team never came.)
+            return
         quest = queue.get("quest", "")
         clear_queue()
         from .teamup import note_team_run
@@ -6831,6 +6836,9 @@ class Quester:
         if mates:
             self._team_with_us = True  # seen one in here: we have a team
             self._mate_last_seen = self._mate_seen_at = now
+            from .teamup import note_mate_seen
+
+            note_mate_seen()
             self.client._players_seen_at = now  # (walk-only while they're around)
             _save_team_state(await self.client.zone_name() or "", now)
             await self._mark_team_room(await self.client.zone_name() or "")

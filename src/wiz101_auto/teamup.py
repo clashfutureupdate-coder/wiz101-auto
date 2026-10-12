@@ -740,6 +740,16 @@ def in_team_run(zone: str) -> bool:
     return zone in zones and time.time() - run.get("at", 0) < TEAM_RUN_HOURS * 3600
 
 
+def note_mate_seen() -> None:
+    """A teammate seen in the team run's dungeon just now."""
+    try:
+        run = json.loads(TEAM_RUN_FILE.read_text(encoding="utf-8"))
+        run["mate_at"] = time.time()
+        TEAM_RUN_FILE.write_text(json.dumps(run), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
 def left_team_run_lately(dungeon: str, now: float | None = None) -> str:
     """The room of a team run in `dungeon` we were in within
     RESUME_AFTER_DEFEAT ("" if none)."""
@@ -747,7 +757,10 @@ def left_team_run_lately(dungeon: str, now: float | None = None) -> str:
         run = json.loads(TEAM_RUN_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    if (time.time() if now is None else now) - run.get("at", 0) > RESUME_AFTER_DEFEAT:
+    # (A teammate seen in it, not just entered: the dungeon-return button put
+    # the bot alone into the Great Beast, and RESUME then took it in alone
+    # again, dropping the queue each time.)
+    if (time.time() if now is None else now) - run.get("mate_at", 0) > RESUME_AFTER_DEFEAT:
         return ""
     base = _dungeon_base(dungeon or "")
     rooms = [z for z in run.get("zones", []) if z and _dungeon_base(z) == base]
