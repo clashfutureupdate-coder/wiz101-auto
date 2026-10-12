@@ -3530,6 +3530,13 @@ class Quester:
         if await self._recall(marked_zone, what):
             self._recall_fails = 0
             self._recall_pending = False
+            if team_back:
+                # (Back with the team: their clock starts again. It left at
+                # once, "no teammate seen for 4 min", counted from before the
+                # defeat.)
+                self._mate_last_seen = time.monotonic()
+                self._team_with_us = True
+                self._team_alone_since = None
             self._team_return_since = None
             if kind == "dungeon":
                 self._retire_dungeon_mark()  # the dungeon resets: its sigil is a fresh start
@@ -6811,7 +6818,7 @@ class Quester:
         await self._final_boss_potion()
         if mates:
             self._team_with_us = True  # seen one in here: we have a team
-            self._mate_last_seen = now
+            self._mate_last_seen = self._mate_seen_at = now
             self.client._players_seen_at = now  # (walk-only while they're around)
             _save_team_state(await self.client.zone_name() or "", now)
             await self._mark_team_room(await self.client.zone_name() or "")
@@ -7010,7 +7017,10 @@ class Quester:
             waited = self.__dict__.setdefault("_boss_waits", {})
             wkey = (await self.client.zone_name() or "", round(marker.x / 300), round(marker.y / 300))
             first = waited.setdefault(wkey, time.monotonic())
-            if time.monotonic() - first > TEAM_START_AFTER and near:
+            # (Only with a teammate seen lately: after a RESUME into Salicar's
+            # Sanctum the team was gone, and the bot started him alone and lost.)
+            mate_lately = time.monotonic() - getattr(self, "_mate_seen_at", -1e9) < TEAM_START_AFTER
+            if time.monotonic() - first > TEAM_START_AFTER and near and mate_lately:
                 # Everyone waiting for someone else to start it (a teammate
                 # stood by Ahuizotl for 10 minutes, then left): we start it,
                 # they walk in.
@@ -7169,6 +7179,16 @@ class Quester:
         from .safe_teleport import allow_engage, allow_teleport, foot_path_failed, walk_zone
 
         logger.info(f"a teammate is fighting at ({fight.x:.0f}, {fight.y:.0f}): joining")
+        if self.upkeep and self.upkeep.use_potions:
+            # A potion on the way in when low (it joined Salicar's fight at
+            # 43% and was defeated in the second round).
+            from .upkeep import TEAM_POTION_BELOW
+
+            hp, _mana = await health_mana(self.client)
+            if hp < TEAM_POTION_BELOW and await self.client.stats.potion_charge() >= 1.0:
+                logger.info(f"joining the team's fight at {hp:.0%} health: a potion first")
+                await ui.click(self.client, ui.POTION_BUTTON)
+                await asyncio.sleep(1.0)
         key = (round(fight.x / 200), round(fight.y / 200))
         fails = self.__dict__.setdefault("_join_fails", {})
         # Walking with players around (the player: walk and follow in a team
