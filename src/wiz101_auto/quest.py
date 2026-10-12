@@ -2829,6 +2829,8 @@ class Quester:
             # the exit, so the step is outside; stay only when the enemy it
             # names is in here.
             leave = not await self._named_enemy_here(objective)
+        if time.monotonic() < self.__dict__.get("_want_out_until", -1e9):
+            leave = True  # (leaving for a fresh copy of the dungeon)
         logger.info(f"dungeon exit prompt: {'leaving' if leave else 'staying'} (objective {objective!r})")
         if leave and not is_team_up_zone(zone) and await self._in_dungeon(zone) and self._dungeon:
             # Left by its exit for an objective outside: this dungeon's part
@@ -7953,7 +7955,15 @@ class Quester:
         if self._mark and self._mark.zone == entry.outside:
             out = await self._recall(entry.outside, "the mark at the dungeon's entrance")
         if not out:
+            # (Its exit asks "If you leave a Dungeon...": leave, this once. The
+            # step answered "staying" for the Whirligig Beetle objective, and
+            # the main quest was set aside instead of a fresh copy.)
+            self._want_out_until = time.monotonic() + 60
             await self.go_to_zone(entry.outside)
+            if await self.client.zone_name() != entry.outside:
+                await self._answer_dungeon_exit()
+                await wait_for_loading(self.client, appear_timeout=5.0)
+            self._want_out_until = -1e9
         if await self.client.zone_name() != entry.outside:
             logger.warning("couldn't get out of the dungeon to go back in")
             return False
