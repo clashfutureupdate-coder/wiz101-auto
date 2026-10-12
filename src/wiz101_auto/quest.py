@@ -6779,6 +6779,7 @@ class Quester:
 
         note_team_run(zone)
         self._team_idle_clock = None  # (the 90 s before leading start now)
+        self._team_ranked = -1e9  # (the dungeon's quest tracked at once, not the side quest of the wait)
         if quest and self.setbacks.deferred.pop(quest, None) is not None:
             self.setbacks.save()
         logger.success(f"team up: in {zone.split('/')[-1]} with a team: back on {quest!r}")
@@ -7437,6 +7438,11 @@ class Quester:
         room = DungeonMemory.load().bosses.get(target) if target else None
         zone = await self.client.zone_name() or ""
         if not room or room == zone:
+            return False
+        if is_team_up_zone(zone) and not is_team_up_zone(room):
+            # (Not out of the team's dungeon for another quest's boss: taken
+            # into Salicar's Sanctum while 'I Can't Dig It' was tracked, it
+            # walked out toward Galek and the team went on without it.)
             return False
         hops = self.doors.route(zone, room)
         if not hops:

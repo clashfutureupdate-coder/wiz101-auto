@@ -737,12 +737,33 @@ def in_team_run(zone: str) -> bool:
     return zone in zones and time.time() - run.get("at", 0) < TEAM_RUN_HOURS * 3600
 
 
-async def _resume_after_defeat(quester, zone: str) -> bool:
+def left_team_run_lately(dungeon: str, now: float | None = None) -> str:
+    """The room of a team run in `dungeon` we were in within
+    RESUME_AFTER_DEFEAT ("" if none)."""
+    try:
+        run = json.loads(TEAM_RUN_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    if (time.time() if now is None else now) - run.get("at", 0) > RESUME_AFTER_DEFEAT:
+        return ""
+    base = _dungeon_base(dungeon or "")
+    rooms = [z for z in run.get("zones", []) if z and _dungeon_base(z) == base]
+    return rooms[-1] if rooms else ""
+
+
+async def _resume_after_defeat(quester, zone: str, dungeon: str = "") -> bool:
     """Defeated in the dungeon, the team fights on inside: the sigil's RESUME
     takes us back into that run (waiting for new players left it for good)."""
     client = quester.client
     if not defeated_inside_recently(quester.controller.last_death, zone or "", time.monotonic()):
-        return False
+        # Or out of the team's run lately without a defeat (it walked out of
+        # Salicar's Sanctum after another quest's boss, and queued again
+        # while the team was still in there).
+        left = left_team_run_lately(dungeon)
+        if left:
+            quester.controller.last_death = (time.monotonic(), left)
+        else:
+            return False
     if not in_team_run(quester.controller.last_death[1]):
         # A solo loss (no team ever came): RESUME put us back in our own copy
         # of the Keep of Ganelon alone, where team mode never starts a fight.
@@ -785,7 +806,7 @@ async def team_up(quester, dungeon: str) -> str:
         # when not queued, and pressing it opened the events window.)
         await close_events_window(client)
         logger.info("team up: waiting on the sigil for players to gather (not queueing)")
-    if await _resume_after_defeat(quester, zone):
+    if await _resume_after_defeat(quester, zone, dungeon):
         return "in"
     # The form may still be open from before (a restart): fill that one in.
     already = False

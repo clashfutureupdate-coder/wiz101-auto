@@ -33,3 +33,17 @@ def test_retalk_after_any_turn_in():
     assert not retalk_after_turn_in({"Old Man of the Desert"}, set(), None, 140.0)  # no talk
     assert not retalk_after_turn_in({"Old Man of the Desert"}, set(), talk, 100.0 + TURN_IN_TALK_SECONDS + 1)
     assert not retalk_after_turn_in({"X"}, set(), ("NPC", "", 100.0), 110.0)  # no zone to go back to
+
+
+def test_left_team_run_lately(tmp_path, monkeypatch):
+    import json
+
+    from wiz101_auto import teamup
+
+    f = tmp_path / "team_run.json"
+    monkeypatch.setattr(teamup, "TEAM_RUN_FILE", f)
+    f.write_text(json.dumps({"zones": ["Khrysalis/Interiors/KR_Z05_I11_Keep_03"], "at": 1000.0}))
+    assert teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z05_I11_Keep_03", now=1100.0)
+    assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z05_I11_Keep_03",
+                                           now=1000.0 + teamup.RESUME_AFTER_DEFEAT + 1)
+    assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z06_I02_AntLionWarren", now=1100.0)
