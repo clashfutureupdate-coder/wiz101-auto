@@ -122,6 +122,19 @@ class CompletionTracker:
         except OSError:
             pass
 
+    def confirm(self, names: set[str]) -> list[str]:
+        """Quests handed in for sure (gone right after the turn-in talk, and
+        not in the game's quest memory): completed now, without waiting for a
+        second full read ('Cor Serpentis': the reads after were partial, inside
+        Ruined Alcazar's caves, and it was never logged). Returns the newly
+        logged ones."""
+        new = sorted(n for n in names if n and n not in self._logged)
+        if self._seen is not None:
+            self._seen -= set(names)
+        self._missing_once -= set(names)
+        self.log(new)
+        return new
+
     def log(self, names: list[str]):
         if not names:
             return

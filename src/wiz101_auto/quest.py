@@ -4748,6 +4748,7 @@ class Quester:
                 except OSError:
                     pass
                 self._talk_again_after_turn_in(prev_names - names, names - prev_names)
+                await self._confirm_handed_in(prev_names - names)
             elif self._active_quest and self._active_quest in prev_names - names:
                 # (A short read too: the quest under way gone right after a talk.)
                 self._talk_again_after_turn_in({self._active_quest}, set())
@@ -5040,6 +5041,20 @@ class Quester:
         save_hand_ins(hand_ins)
         save_retalk(queue)
 
+    async def _confirm_handed_in(self, gone: set[str]):
+        """Quests that left the book right after a talk and aren't in the
+        game's quest memory either: logged as completed now (the two-reads rule
+        missed 'Cor Serpentis', every read after it a partial one)."""
+        last = self.__dict__.get("_handed_talk")
+        if not gone or not last or time.monotonic() - last[2] > TURN_IN_TALK_SECONDS:
+            return
+        got = await self._quests_in_memory()
+        if got is None or not got[0]:
+            return
+        held = {norm(n) for n in got[0]}
+        for name in self.completions.confirm({n for n in gone if norm(n) not in held}):
+            logger.success(f"quest completed: {name!r} (handed in)")
+
     def _talk_again_after_turn_in(self, gone: set[str], new: set[str] = frozenset()):
         """A quest just left the book right after talking to someone: that was
         the turn-in. Talk to them again at once and accept what they offer
@@ -5047,6 +5062,7 @@ class Quester:
         Revisited' only when talked to a second time; the bot had walked off
         and the story stopped)."""
         last = self.__dict__.get("_last_talk")
+        self._handed_talk = last  # (for _confirm_handed_in, after this clears it)
         if not gone or not last or VISIT_FILE.exists():
             return
         # (They gave the next one with the turn-in: Pierce Stanson handed

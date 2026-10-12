@@ -98,3 +98,16 @@ def test_quest_props_are_not_people():
     for prop in ("Sea Salt", "Burrow Shovel", "Mining Equipment", "Obelisk Orb"):
         assert not looks_like_person(prop)
     assert looks_like_person("Zarozinia the DeathSong")
+
+
+def test_handed_in_quest_logged_at_once(tmp_path):
+    from wiz101_auto.questlist import CompletionTracker, load_completed
+
+    log = tmp_path / "done.txt"
+    t = CompletionTracker(log)
+    t.update({"Cor Serpentis", "Into the Sea"})
+    assert t.confirm({"Cor Serpentis"}) == ["Cor Serpentis"]
+    assert load_completed(log) == ["Cor Serpentis"]
+    assert t.confirm({"Cor Serpentis"}) == []  # (once)
+    assert t.update({"Into the Sea"}) == []  # (no second logging from the two-reads rule)
+    assert t.update({"Into the Sea"}) == []
