@@ -1625,12 +1625,20 @@ class Quester:
             logger.debug(f"clear-of-enemies check failed: {exc!r}")
             return False
 
+    def _kept_queue_lately(self) -> bool:
+        """A dungeon was just skipped to keep the Team Up queue."""
+        return time.monotonic() - self.__dict__.get("_queue_kept_at", -1e9) < 30
+
     async def walk_through(self, target: XYZ, zone: str | None, overshoot: float = DOOR_OVERSHOOT) -> bool:
         """Walk straight at `target` and a little past it.
 
         Doors and zone exits only trigger when you walk into them; teleporting
         onto one gets rejected by the game and snaps you back.
         """
+        if self._kept_queue_lately():
+            # A dungeon skipped to keep the Team Up queue: no walking at its
+            # door from every side ('The Cost' asked 8 times in 3 s, 14:51).
+            return False
         # A "press X" spot (the Balance School's ladder): use it rather than
         # walking past it.
         if await self._press_x_here(zone):
@@ -3842,6 +3850,8 @@ class Quester:
         # through the marker from there.
         from .smoothwalk import yaw_to
 
+        if self._kept_queue_lately():
+            return False
         logger.info("backing off the door marker on foot to walk through it")
         for i in range(8):
             ang = i * math.pi / 4
@@ -5770,7 +5780,7 @@ class Quester:
         zone's duel circle first (Gurtok Firebender guards the crystal that
         opens Malistaire's door). Goes to the circle remembered in the
         entity map, then onto the enemy standing on it. True if it acted."""
-        if time.monotonic() - self.__dict__.get("_queue_kept_at", -1e9) < 30:
+        if self._kept_queue_lately():
             # (Not a locked door: the dungeon was skipped to keep the Team Up
             # queue. Galek's sigil, then fights with Flame Legs on Last Wood's
             # circle, fled, every ten minutes.)
