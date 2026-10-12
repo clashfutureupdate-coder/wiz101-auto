@@ -59,3 +59,9 @@ def test_no_resume_without_a_teammate_seen(tmp_path, monkeypatch):
     monkeypatch.setattr(teamup, "TEAM_RUN_FILE", f)
     f.write_text(json.dumps({"zones": ["Khrysalis/Interiors/KR_Z06_I01_BeastControl"], "at": 1000.0}))
     assert not teamup.left_team_run_lately("Khrysalis/Interiors/KR_Z06_I01_BeastControl", now=1100.0)
+
+
+def test_ruined_alcazar_is_a_known_place():
+    from wiz101_auto.quest import objective_zone
+
+    assert objective_zone("Defeat Deep Spawn in Ruined Alcazar (0 of 2)") == "Khrysalis/KR_Z07_RuinedAlcazar"

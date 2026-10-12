@@ -196,6 +196,9 @@ EXTRA_DISPLAY_ZONES = [
     ("djeserit family tomb", "Krokotopia/KT_Tomb/KT_DjeseritTomb"),  # the data says "djeserit tomb"
     ("ahnic family tomb", "Krokotopia/KT_Tomb/KT_AhnicTomb"),  # the data says "ahnic tomb"
     ("karanahn palace", "Krokotopia/KT_Tomb/KT_KaranahnPalace"),  # not in the data
+    # (Not in the data: 'Defeat Deep Spawn in Ruined Alcazar' read no zone, and
+    # from Crescent Beach the bot fought White Razors on its duel circle.)
+    ("ruined alcazar", "Khrysalis/KR_Z07_RuinedAlcazar"),
 ]
 
 
