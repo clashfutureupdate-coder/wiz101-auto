@@ -300,7 +300,12 @@ class PetDancer:
         pet = load_pet()
         what = f"{pet.get('kind') or 'pet'} {pet.get('stage') or ''}".strip()
         logger.info(f"pet: energy full ({now}/{most}): off to the dance game ({what})")
-        await self.trip(0)
+        try:
+            await self.trip(0)
+        finally:
+            # The trip isn't a stall: 8 min of dancing counted as "no progress"
+            # on 'Open Secret Passage' and set the main story aside (15:47).
+            self.q._last_progress_time = time.monotonic()
         return True
 
     async def _learn(self, window_name: str):
