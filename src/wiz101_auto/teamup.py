@@ -119,6 +119,8 @@ async def accept_team_ready(client) -> bool:
     box = await ui.modal_box(client)
     if box is not None:
         text = (await ui.modal_text(box)).lower()
+        if "leave a dungeon" in text or "leave this dungeon" in text:
+            return False  # (a dungeon's Exit prompt: the step answers it, not a team)
         if "team" in text or "dungeon" in text or "group" in text:
             await _dump(client, f"ready_{int(time.time())}")
             logger.success(f"team up: the team is ready ({text[:100]!r}); accepting")
