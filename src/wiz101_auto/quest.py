@@ -1432,6 +1432,10 @@ class Quester:
             if self._last_progress[0] and objective != self._last_progress[0]:
                 self.objectives_completed += 1
                 logger.success(f"objective done -> now: {objective!r}")
+                # (Back to an objective set aside for stalling before: its 5
+                # minutes again. 'Search For Kondha Rune's Purpose' went round
+                # Silent Market's door for 20 minutes the second time.)
+                self._stall_switched_for = ""
                 beaten_boss = defeat_target(self._last_progress[0] or "") or ""
                 # (Not while another fight follows: Black Shield's step done
                 # in Fort Rachias's Keep, 'Defeat Scorpion Grotesque' next and
