@@ -65,3 +65,12 @@ def test_ruined_alcazar_is_a_known_place():
     from wiz101_auto.quest import objective_zone
 
     assert objective_zone("Defeat Deep Spawn in Ruined Alcazar (0 of 2)") == "Khrysalis/KR_Z07_RuinedAlcazar"
+
+
+def test_boss_flee_counts_as_a_loss_not_a_death():
+    from wiz101_auto.safety import Controller
+
+    c = Controller("ctrl+shift+q", "ctrl+shift+p", 0)
+    c.record_boss_flee("Khrysalis/Interiors/KR_Z07_I07_PhoenixTop")
+    assert c.losses == 1 and c.deaths == 0
+    assert c.last_death[1] == "Khrysalis/Interiors/KR_Z07_I07_PhoenixTop"

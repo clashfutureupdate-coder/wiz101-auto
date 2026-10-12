@@ -88,6 +88,7 @@ class Controller:
         self.pause_keys = parse_hotkey(pause_key)
         self.deadline = time.monotonic() + max_hours * 3600 if max_hours > 0 else None
         self.deaths = 0
+        self.losses = 0  # defeats, and boss fights fled with no attacks left (a loss for the objective)
         self.last_death: tuple[float, str] | None = None  # (monotonic time, zone)
         self.stopped = asyncio.Event()
         self._resume = asyncio.Event()
@@ -126,11 +127,19 @@ class Controller:
 
         lifetime.load()  # seed the totals from the log before this death is logged
         self.deaths += 1
+        self.losses += 1
         self.last_death = (time.monotonic(), zone)
         total = lifetime.add_death(world_of_zone(zone))
         # Deaths never stop the bot: losing fights is handled per objective
         # (setbacks puts a quest aside and the bot levels up elsewhere).
         logger.warning(f"wizard defeated ({self.deaths} this session, {total} in all)")
+
+    def record_boss_flee(self, zone: str = ""):
+        """A boss fight fled with no attack cards left: lost, though alive
+        (Papa Jacobo: fled again and again, never counted, no Team Up)."""
+        self.losses += 1
+        self.last_death = (time.monotonic(), zone)
+        logger.warning("fled the boss fight with no attacks left: counted as a loss")
 
     async def checkpoint(self):
         """Await between actions: blocks while paused, raises when stopped."""

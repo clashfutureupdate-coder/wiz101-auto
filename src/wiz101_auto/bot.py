@@ -358,6 +358,9 @@ async def combat_loop(client, fighter: Fighter, cfg: Config, controller: Control
                 if adapter is not None and not _team_zone(fight_zone):
                     adapter.on_fight(list(fighter.last_enemy_names))
                     adapter.on_defeat(list(fighter.last_enemy_names), fighter.last_bosses)
+            elif fighter.fled and getattr(fighter, "fled_no_attacks", False):
+                controller.record_boss_flee(fight_zone)
+                controller.last_death_enemies = (list(fighter.last_enemy_names), set(fighter.last_bosses))
             elif await is_free(client):
                 if adapter is not None and not fighter.fled:
                     adapter.on_fight(list(fighter.last_enemy_names))

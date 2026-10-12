@@ -349,6 +349,7 @@ class Fighter(CombatHandler):
         self.boss_fights = 0  # fights that had a boss in them
         self.combat_ended_at = 0.0  # monotonic time the last fight ended
         self.fled = False  # the last fight ended by fleeing (not a defeat)
+        self.fled_no_attacks = False  # ... from a boss, out of attack cards (a loss all the same)
         self.last_boss_names: list[str] = []  # bosses in the current/last fight (farm runs end on one)
         self.last_enemy_names: list[str] = []  # enemies of the current/last fight
         self.last_bosses: set[str] = set()  # which of them the game marks as bosses
@@ -728,6 +729,7 @@ class Fighter(CombatHandler):
                 fled = await self._flee()
                 self.fled = self.fled or fled
                 if fled:
+                    self.fled_no_attacks = any(e.is_boss for e in battle.enemies)
                     return
 
             if not self._judged_fight:
@@ -1077,6 +1079,7 @@ class Fighter(CombatHandler):
         self._no_discard = set()
         self._discard_pending = None
         self.fled = False
+        self.fled_no_attacks = False
         with contextlib.suppress(Exception):  # where we fought (a boss's walk-in starts there)
             from ..dungeons import note_last_fight
 

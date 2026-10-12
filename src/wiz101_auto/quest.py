@@ -3334,7 +3334,7 @@ class Quester:
     async def _note_defeats(self):
         """After a defeat, count it against the objective; the second one sets the
         quest aside for another questline (until a level-up or an hour passes)."""
-        deaths = self.controller.deaths
+        deaths = getattr(self.controller, "losses", self.controller.deaths)
         if deaths <= self._seen_deaths:
             return
         self._seen_deaths = deaths
