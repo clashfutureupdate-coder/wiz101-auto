@@ -330,6 +330,7 @@ GRIND_RERANK_SECONDS = 90.0  # while grinding, re-read the quest book this often
 STUCK_TIMES_TO_FARM = 3  # a main quest found stuck this often: farm Aquila instead
 ALERT_REPEAT_SECONDS = 3600.0  # the same main quest is alerted about at most hourly
 STALL_SWITCH_SECONDS = 180.0  # no objective change and no won fight: follow another quest
+BRING_OUT_STALL = 90.0  # stuck in a dungeon: seconds after each room action (NPC, pick-up) before the next
 # Attempts at one approach (per objective and zone) before it's skipped for
 # the next one; when every approach is used up the quest is set aside.
 APPROACH_LIMITS = {"talk_marker": 2, "marker_x": 2, "walk": 2, "teleporter": 3, "sweep": 2, "inch": 2,
@@ -1541,7 +1542,17 @@ class Quester:
                 self._last_progress_time = time.monotonic()
                 quest = None
             here = await self.client.zone_name() or ""
-            if quest and await self._in_dungeon(here) and await self._reenter_for_npc(objective, here):
+            in_dungeon = bool(quest) and await self._in_dungeon(here)
+            if in_dungeon and await self.bring_out.step(objective, here, "the way on"):
+                # Stuck inside a dungeon: work the room first, one thing per
+                # stall (its NPCs, pick-ups, boss, switches). The gate into
+                # Balor's room in a fresh Troika Palace copy opened only after
+                # talking to the Lady of the Lake again; the bot walked at it
+                # for 6 min and set the main story aside.
+                self._stall_switched_for = None
+                self._last_progress_time = time.monotonic() - STALL_SWITCH_SECONDS + BRING_OUT_STALL
+                return
+            if in_dungeon and await self._reenter_for_npc(objective, here):
                 # Stuck inside a dungeon: a fresh copy first ('Explore King's
                 # Tomb' led nowhere once the copy had broken).
                 self._stall_switched_for = None
