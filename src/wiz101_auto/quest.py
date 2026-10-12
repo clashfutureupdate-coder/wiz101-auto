@@ -6763,7 +6763,11 @@ class Quester:
         if not teams or got is None or not got[0]:
             return False
         held = {norm(n) for n in got[0]}
-        missing = {d for d, q in teams.items() if q and norm(q) not in held}
+        # (Never the quest under way, nor one the last full book read had:
+        # 'Sea of Heartbreak', tracked for Deep Spawn, read as not held and
+        # his room went back to solo.)
+        keep = {norm(n) for n in (self._book_names or set())} | {norm(self._active_quest or "")}
+        missing = {d for d, q in teams.items() if q and norm(q) not in held and norm(q) not in keep}
         # (Missing on two reads a minute apart: one read during a zone load
         # can come up short; 'Hear Me Roar' was dropped while in the book.)
         gone = sorted(missing & self.__dict__.get("_team_missing", set()))
