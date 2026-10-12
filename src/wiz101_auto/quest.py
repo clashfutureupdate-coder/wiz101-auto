@@ -3230,7 +3230,7 @@ class Quester:
         that dungeon goes on the team list (the player's "multiplayer mode":
         wait at its sigil, Team Up, fight it with 2+ players, as at Mount
         Olympus). True if it did; False outside a known dungeon."""
-        from .teamup import TEAM_UP_DUNGEONS, add_team_dungeon
+        from .teamup import TEAM_UP_DUNGEONS, _dungeon_base, add_team_dungeon
 
         if quest not in self._mainline and not story:
             # (`story`: on the detour world's story list: 'Not a Cold Dead Place'
@@ -3262,6 +3262,10 @@ class Quester:
         # room past the sigil: the same, no Recall back in.)
         if dungeon not in TEAM_UP_DUNGEONS:
             add_team_dungeon(dungeon, quest)  # (this quest's: the list goes when it's done)
+        if "/interiors/" in room.lower() and _dungeon_base(room) != _dungeon_base(dungeon):
+            # The boss's own room too (Deep Spawn's BeastTopside_03: not
+            # named like BeastControl, it stayed solo after the queue).
+            add_team_dungeon(room, quest)
         logger.warning(f"lost {objective!r} {losses} times: {dungeon.split('/')[-1]} with a team from now on "
                        f"(Team Up at its sigil) until {quest!r} is done")
         self._alert_main_stuck(quest, f"lost {objective!r} {losses} times; waiting for a team")
