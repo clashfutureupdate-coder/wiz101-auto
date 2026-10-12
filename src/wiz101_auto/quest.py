@@ -3254,9 +3254,17 @@ class Quester:
             # A room of another name past the sigil's (the Great Beast:
             # BeastControl's sigil, Deep Spawn up in BeastTopside_03, lost 5
             # times solo): the sigil dungeon whose doors lead to it.
+            # (Rooms only on the way: a route through the open world made the
+            # Mausoleum the Crab Cave's dungeon. The one we went in by first.)
+            def inside(d: str) -> bool:
+                hops = self.doors.route(d, room)
+                return bool(hops) and all("/interiors/" in h[3].lower() for h in hops)
+
             world = room.split("/")[0]
-            dungeon = next((d for d, e in memory.dungeons.items()
-                            if e.sigil and d.split("/")[0] == world and self.doors.route(d, room)), None)
+            entered = [self._dungeon[1]] if self._dungeon else []
+            dungeon = next((d for d in [*entered, *memory.dungeons]
+                            if (e := memory.dungeons.get(d)) is not None and e.sigil
+                            and d.split("/")[0] == world and inside(d)), None)
             entry = memory.dungeons.get(dungeon or "")
         if not dungeon or entry is None or not entry.sigil:
             return False
