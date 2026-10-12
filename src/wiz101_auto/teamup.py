@@ -662,6 +662,28 @@ async def _dump(client, stage: str):
         logger.debug(f"team up: could not save the {stage} windows: {exc!r}")
 
 
+COOLDOWN_WAIT_MAX = 6 * 60  # seconds worth waiting at the sigil for TEAM UP! to come back
+_COOLDOWN = re.compile(r"team\s*up!?\s*in\s*(?:(\d+):)?(\d+):(\d\d)", re.IGNORECASE)
+
+
+def cooldown_seconds(text: str) -> int | None:
+    """Seconds left on the sigil's Team Up cooldown ("Team Up!  in 01:24"),
+    or None when the text isn't a cooldown (e.g. "Waiting": queued)."""
+    m = _COOLDOWN.search(text or "")
+    if not m:
+        return None
+    hours, minutes, seconds = (int(g) if g else 0 for g in m.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+
+async def _wait_text(client) -> str:
+    try:
+        w = await ui._visible_named(client.root_window, "TeamUpWaitText")
+        return await ui.window_text(w) if w is not None else ""
+    except Exception:
+        return ""
+
+
 async def _click(client, words, stage: str) -> bool:
     button = await _find_button(client.root_window, words)
     if button is None:
@@ -832,7 +854,21 @@ async def team_up(quester, dungeon: str) -> str:
     # (The sigil itself says it best: TEAM UP! on it means not queued. The
     # Waiting badge read "Waiting" with no queue on, 20:42, and the bot went
     # off to side quests unqueued.)
-    if not form_done and not await _click(client, TEAM_UP_WORDS, "sigil"):
+    clicked = form_done or await _click(client, TEAM_UP_WORDS, "sigil")
+    if not clicked:
+        # "Team Up!  in 01:24" (a cooldown after a team broke up, 13:06) also
+        # hides the button: that is NOT a queue (the bot went off to side
+        # quests unqueued). Wait it out, then queue.
+        wait = cooldown_seconds(await _wait_text(client))
+        if wait is not None and wait <= COOLDOWN_WAIT_MAX:
+            logger.info(f"team up: TEAM UP! on cooldown ({wait}s): waiting at the sigil, then queueing")
+            quester.controller.allow_idle(wait + 60)
+            await asyncio.sleep(wait + 2)
+            clicked = await _click(client, TEAM_UP_WORDS, "sigil")
+        if not clicked and wait is not None:
+            logger.warning(f"team up: TEAM UP! still on cooldown ({wait}s): not queued")
+            return "none"
+    if not clicked:
         # The sigil shows only Resume while we're queued (after a restart the
         # Waiting badge wasn't always readable): wait for the team to take us.
         logger.info("team up: no TEAM UP! button on the sigil (already queued?); waiting on")
