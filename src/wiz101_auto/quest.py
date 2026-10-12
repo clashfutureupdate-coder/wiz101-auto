@@ -9230,6 +9230,11 @@ class Quester:
         else:
             rerank_due = False
         elsewhere = getattr(self, "_side_elsewhere", False) and not self._grinding
+        if elsewhere and self._main_world and zone_world(zone_here.split("/", 1)[0]) != self._main_world:
+            # (Already in the other world for its side quest: do it. Arrived in
+            # Cyclops Lane for the Lumbering Trolls, it went straight back to
+            # Khrysalis to visit people, and back again.)
+            elsewhere = False
         # (Never out of a team dungeon or a dungeon for it: just in with a team
         # for Deep Spawn in the Crab Cave, it left to ask Zaltanna for quests.)
         if ((self._grinding or elsewhere) and not VISIT_FILE.exists() and self._main_world

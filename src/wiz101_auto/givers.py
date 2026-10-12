@@ -104,7 +104,10 @@ _OBJECT_WORDS = frozenset({"chest", "circle", "sign", "signpost", "statue", "doo
                            "tail", "column", "cocoon", "head", "nest", "scroll", "bridge",
                            "flower", "egg", "eggs", "bones", "lantern", "torch", "tent", "cart",
                            "wagon", "beacon", "rock", "log", "mushroom", "plant", "crystal",
-                           "barricade", "sacrifice", "beans", "leaf", "leaves", "web"})
+                           "barricade", "sacrifice", "beans", "leaf", "leaves", "web",
+                           # More of Khrysalis's ('Sea Salt', 'Burrow Shovel', 'Mining
+                           # Equipment', 'Obelisk Orb': visited for side quests)
+                           "salt", "shovel", "equipment", "orb", "spear", "branch", "elemental"})
 
 
 _AMBIENT = re.compile(r"^amb(?!rose)")  # "AmbLady", "AmbWalker10"; not Headmaster Ambrose

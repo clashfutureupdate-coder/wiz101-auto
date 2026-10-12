@@ -90,3 +90,11 @@ def test_story_rooms_remembered():
     for i in range(10):
         many = note_story_room(many, f"Khrysalis/Interiors/R{i}", "Khrysalis")
     assert len(many) == STORY_ROOMS_KEPT
+
+
+def test_quest_props_are_not_people():
+    from wiz101_auto.givers import looks_like_person
+
+    for prop in ("Sea Salt", "Burrow Shovel", "Mining Equipment", "Obelisk Orb"):
+        assert not looks_like_person(prop)
+    assert looks_like_person("Zarozinia the DeathSong")
