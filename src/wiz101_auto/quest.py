@@ -9684,6 +9684,21 @@ class Quester:
         # walking at it). Not from inside a dungeon or a room (its quest is
         # often 'in' the zone outside: Usunoki in the Town Dojo).
         place = objective_zone(objective) if objective else None
+        boss_room = DungeonMemory.load().bosses.get(defeat_target(objective or "") or "")
+        if (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
+                and boss_room.rsplit("/", 1)[0] == zone.rsplit("/", 1)[0]
+                and self._may_try(objective, zone, "boss_room_doors")):
+            # In another room than the boss's (the Great Beast, its marker
+            # door going back and forth to BeastTopside_02, for Deep Spawn in
+            # Ruined Alcazar's Crab Cave): the learned doors there, else out
+            # by the hub button and the gates.
+            if not await self._walk_to_boss_room():
+                from .dungeon_heal import go_to_hub
+
+                logger.info(f"{defeat_target(objective)} is in {boss_room.split('/')[-1]}, no known way "
+                            f"from {zone.split('/')[-1]}: out by the hub button")
+                await go_to_hub(self.client)
+            return
         if (place and zone and place != zone and "/interiors/" not in zone.lower()
                 and not await self._in_dungeon(zone)
                 and (gate_toward(zone, place, self._bad_gates) or self.doors.route(zone, place))
