@@ -624,6 +624,7 @@ def save_hand_ins(hand_ins: dict[str, list[list[str]]]):
         pass
 
 
+STORY_TALK_RECENT = 1800.0  # a talk this recent: the story's last giver
 STORY_ROOMS_KEPT = 6  # the story's last buildings (asked when the next giver isn't outside)
 
 
@@ -5034,6 +5035,7 @@ class Quester:
                     queue.append([npc, where])
                     logger.info(f"{name!r} completed: {npc} was talked to just before; asking them again too")
         if done:
+            self._talks_before = list(getattr(self, "_recent_talks", []))  # (for a story gap after)
             self._recent_talks = []  # (each asked again once)
         save_hand_ins(hand_ins)
         save_retalk(queue)
@@ -6466,6 +6468,19 @@ class Quester:
             rooms = [r for r in self.__dict__.get("_story_rooms", []) if r.split("/", 1)[0] == world]
             gap = {"zone": zone, "asked": 0, "rooms": rooms}
             DETOUR_GAP_FILE.write_text(json.dumps(gap), encoding="utf-8")
+            # The story's last person talked to, asked again first, wherever
+            # they stand now ('A Dream of Avalon' was Amelia Stardust's, after
+            # 'Chambers of the Mind' ended with no talk; the sweep looked for
+            # her where she stood an hour before and never found her).
+            now = time.monotonic()
+            talks = [*getattr(self, "_talks_before", []), *getattr(self, "_recent_talks", [])]
+            last = next((t for t in reversed(talks)
+                         if t[1].split("/", 1)[0] == world and now - t[2] < STORY_TALK_RECENT), None)
+            if last:
+                queue = load_retalk()
+                if [last[0], last[1]] not in queue:
+                    save_retalk([*queue, [last[0], last[1]]])
+                    logger.info(f"the story's next quest: asking {last[0]} again first")
             logger.info(f"the detour's quest ended in {zone.split('/')[-1]}: its NPCs have the next one")
 
     async def _ask_story_rooms(self) -> bool:
