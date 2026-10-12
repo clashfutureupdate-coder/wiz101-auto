@@ -74,3 +74,19 @@ def test_boss_flee_counts_as_a_loss_not_a_death():
     c.record_boss_flee("Khrysalis/Interiors/KR_Z07_I07_PhoenixTop")
     assert c.losses == 1 and c.deaths == 0
     assert c.last_death[1] == "Khrysalis/Interiors/KR_Z07_I07_PhoenixTop"
+
+
+def test_story_rooms_remembered():
+    from wiz101_auto.quest import STORY_ROOMS_KEPT, note_story_room
+
+    stag, serpent = "Khrysalis/Interiors/KR_Z08_I04_StagTower", "Khrysalis/Interiors/KR_Z08_I03_SerpentTower"
+    rooms = note_story_room([], stag, "Khrysalis")
+    rooms = note_story_room(rooms, "Khrysalis/KR_Z08_RadianceReborn", "Khrysalis")  # outdoors: not a room
+    rooms = note_story_room(rooms, serpent, "Khrysalis")
+    rooms = note_story_room(rooms, stag, "Khrysalis")  # again: latest last
+    assert rooms == [serpent, stag]
+    assert note_story_room(rooms, "Aquila/Interiors/X", "Khrysalis") == rooms  # another world
+    many = rooms
+    for i in range(10):
+        many = note_story_room(many, f"Khrysalis/Interiors/R{i}", "Khrysalis")
+    assert len(many) == STORY_ROOMS_KEPT

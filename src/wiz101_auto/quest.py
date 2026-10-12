@@ -624,6 +624,17 @@ def save_hand_ins(hand_ins: dict[str, list[list[str]]]):
         pass
 
 
+STORY_ROOMS_KEPT = 6  # the story's last buildings (asked when the next giver isn't outside)
+
+
+def note_story_room(rooms: list[str], zone: str, world: str) -> list[str]:
+    """The story's buildings, latest last: `zone` added when it's a building
+    ("/Interiors/") of the story's world; at most STORY_ROOMS_KEPT."""
+    if "/interiors/" not in (zone or "").lower() or zone.split("/", 1)[0] != world:
+        return rooms
+    return ([r for r in rooms if r != zone] + [zone])[-STORY_ROOMS_KEPT:]
+
+
 def retalk_after_turn_in(gone: set[str], new: set[str], last_talk, now: float,
                          window: float = TURN_IN_TALK_SECONDS) -> bool:
     """Quests just left the book (memory or a read) after a talk with an NPC
@@ -1469,6 +1480,9 @@ class Quester:
                 self._step_is_fight = False
             if self._last_progress[0] and objective and self._active_quest:
                 self._momentum = (self._active_quest, time.monotonic())  # mid-way through it
+            if zone and self._active_quest in (self._mainline or set()):
+                self._story_rooms = note_story_room(self.__dict__.get("_story_rooms", []), zone,
+                                                    zone.split("/", 1)[0])
             # Back in a zone already visited on this objective isn't progress
             # (Silent Market <-> Ruined Alcazar by one door for 20 minutes,
             # each zone change restarting the 5-minute stall clock).
@@ -6436,8 +6450,43 @@ class Quester:
         if has or not had:
             return
         if zone:
-            DETOUR_GAP_FILE.write_text(json.dumps({"zone": zone, "asked": 0}), encoding="utf-8")
+            # (And the buildings the story went through: the next giver may be
+            # inside one, 'A Dream of Avalon' after 'Chambers of the Mind'.)
+            world = zone.split("/", 1)[0]
+            rooms = [r for r in self.__dict__.get("_story_rooms", []) if r.split("/", 1)[0] == world]
+            gap = {"zone": zone, "asked": 0, "rooms": rooms}
+            DETOUR_GAP_FILE.write_text(json.dumps(gap), encoding="utf-8")
             logger.info(f"the detour's quest ended in {zone.split('/')[-1]}: its NPCs have the next one")
+
+    async def _ask_story_rooms(self) -> bool:
+        """The outdoor NPCs asked for the story's next quest, none had it: the
+        buildings the last story quest went through next, one at a time (the
+        usual giver talks there). True if it acted."""
+        try:
+            gap = json.loads(DETOUR_GAP_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        rooms = gap.get("rooms") or []
+        if not rooms or not gap.get("asked") or getattr(self.givers, "main_sweep_zone", ""):
+            return False  # (the outdoor sweep first, and one room's sweep at a time)
+        here = await self.client.zone_name() or ""
+        if await self.client.in_battle() or is_team_up_zone(here):
+            return False
+        room = rooms[0]
+        if here != room:
+            logger.info(f"no story quest outside: to {room.split('/')[-1]} to ask its NPCs")
+            moved = await self.go_to_zone(room)
+            if await self.client.zone_name() != room:
+                if not moved:
+                    gap["rooms"] = rooms[1:]  # (no known way in: the next one)
+                    DETOUR_GAP_FILE.write_text(json.dumps(gap), encoding="utf-8")
+                return True
+        gap["rooms"] = rooms[1:]
+        DETOUR_GAP_FILE.write_text(json.dumps(gap), encoding="utf-8")
+        logger.info(f"asking the NPCs in {room.split('/')[-1]} for the story's next quest")
+        self.givers.sweep_now(room)
+        self._ranked_for = None
+        return True
 
     def _detour_gap_pending(self) -> bool:
         """The detour's NPCs not asked yet for its next quest (state/detour_gap.json)."""
@@ -9262,6 +9311,9 @@ class Quester:
             logger.debug("step: story giver sweep")
             return
         live_pin = self._pin and (not self._book_names or self._pin in self._book_names)
+        if not self._mainline and not live_pin and not sweep and await self._ask_story_rooms():
+            logger.debug("step: asked in the story's buildings")
+            return
         if not self._mainline and not live_pin and self._detour_gap_pending() and await self._detour_ask():
             # The story's quest ended with none after it: its NPCs before any
             # side quest (the player's order; it went off to 'The Spiral Cup'
