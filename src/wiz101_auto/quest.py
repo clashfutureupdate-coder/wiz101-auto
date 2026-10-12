@@ -9261,7 +9261,8 @@ class Quester:
             await self.pet.trip(0)
             return
         accepted_new = (self.dialogue.accepted if self.dialogue else 0) != self._accepted_seen
-        if self._grinding and time.monotonic() - self._last_rank > GRIND_RERANK_SECONDS:
+        hunting = self._grinding or getattr(self, "_side_elsewhere", False)
+        if hunting and time.monotonic() - self._last_rank > GRIND_RERANK_SECONDS:
             # Hunting side quests NPC after NPC: the book read again now and
             # then (an hour of Zafaria visits went by without one, and the
             # quests taken on the way were never tracked).
