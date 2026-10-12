@@ -2144,8 +2144,10 @@ class Quester:
             logger.info(f"not entering a dungeon for {quest!r}: it would drop the Team Up queue for "
                         f"{queue.get('dungeon', '').split('/')[-1]}")
             level = await self.client.stats.reference_level()
+            # (Longer than the queue's own recheck: 'I Can't Dig It' brought
+            # the bot back to Galek's sigil, three zones away, every 5 minutes.)
             self.setbacks.set_quest_aside(quest, self._sigil_for, level, main=quest in self._mainline,
-                                          retry_after=QUEUE_RECHECK)
+                                          retry_after=QUEUE_RECHECK * 4)
             self.setbacks.save()
             self._ranked_for = None
             self._last_rank = -1e9
