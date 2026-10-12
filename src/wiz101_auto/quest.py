@@ -6812,6 +6812,8 @@ class Quester:
         note_team_run(zone)
         self._team_idle_clock = None  # (the 90 s before leading start now)
         self._team_ranked = -1e9  # (the dungeon's quest tracked at once, not the side quest of the wait)
+        self._grinding = False  # (the team's quest now, not the hunt for side quests of the wait)
+        VISIT_FILE.unlink(missing_ok=True)
         if quest and self.setbacks.deferred.pop(quest, None) is not None:
             self.setbacks.save()
         logger.success(f"team up: in {zone.split('/')[-1]} with a team: back on {quest!r}")
@@ -9094,8 +9096,11 @@ class Quester:
         else:
             rerank_due = False
         elsewhere = getattr(self, "_side_elsewhere", False) and not self._grinding
+        # (Never out of a team dungeon or a dungeon for it: just in with a team
+        # for Deep Spawn in the Crab Cave, it left to ask Zaltanna for quests.)
         if ((self._grinding or elsewhere) and not VISIT_FILE.exists() and self._main_world
                 and not accepted_new and not rerank_due and not self._pin
+                and not is_team_up_zone(zone_here) and not await self._in_dungeon(zone_here)
                 and not await self.client.in_battle()):
             # (Not with a quest picked: the pinned 'Goblin Up' waited while it
             # went visiting Caliburn's people "instead of grinding".)
