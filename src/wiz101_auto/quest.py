@@ -208,6 +208,7 @@ SEEK_CLEAR = 1200.0  # no other kind of enemy this close to a spot we go to
 LONE_TARGET_CLEARANCE = 800.0  # going after an enemy: no other kind this close to it
 ENGAGE_BACKOFF = 400.0  # landing on it started no fight: walk in from this far, times the misses
 ENGAGE_BACKOFF_MAX = 2400.0
+ORIGIN_NEAR = 400.0  # an object this near the zone's (0, 0): a (0, 0, 0) marker may be real
 SIGIL_SLOT = 200.0  # a 4-player sigil's slot circles: this far from its centre
 TALK_FIGHT_TRIES = 2  # "Talk To X" with X a mob here: fights started for it before talking instead
 ENGAGE_CIRCLE_WAIT = 25.0  # landed on a duel circle with no fight yet: wait this long for it
@@ -8991,6 +8992,28 @@ class Quester:
                 await asyncio.sleep(3.0)
                 return
 
+    async def _marker_at_origin(self, objective: str, zone: str) -> bool:
+        """A use/place objective whose marker reads (0, 0, 0): that can be the
+        real spot, the zone's centre ('Place Phoenix Egg in Ruined Alcazar':
+        the central hollow with the Starstuff, the Radiance Reborn teleporter
+        beside it; 3 minutes of searching the zone for an egg). When something
+        stands near the centre: go there and use its prompt. Twice at most."""
+        from .prompt_watch import operated_thing
+
+        if not operated_thing(objective) or not self._may_try(objective, zone, "origin"):
+            return False
+        near = [p for n, spots in (self.entity_map.zones.get(zone, {}) or {}).items()
+                for p in spots if math.hypot(p[0], p[1]) < ORIGIN_NEAR and (p[0], p[1]) != (0, 0)]
+        if not near:
+            return False
+        spot = min(near, key=lambda p: math.hypot(p[0], p[1]))
+        logger.info(f"no quest marker for {objective!r}; trying the zone's centre, beside "
+                    f"({spot[0]:.0f}, {spot[1]:.0f})")
+        await self.travel(XYZ(0.0, 0.0, spot[2]))
+        await asyncio.sleep(1.0)
+        await self.interact(objective)
+        return True
+
     async def _no_marker_fallback(self, objective: str, zone: str) -> bool:
         """Walk through a known gate toward the place the objective names, else
         try the known hidden quest-target spots in this zone. True if it acted."""
@@ -9055,6 +9078,8 @@ class Quester:
                 logger.warning(f"{target_zone} looks locked (every gate refused); setting this quest aside")
                 return await self._set_current_aside(objective)
             return False  # the target is in another zone; its spots here are someone else's
+        if await self._marker_at_origin(objective, zone):
+            return True
         # "Talk to Clockwork in Katzenstein's Lab" with no marker: look for
         # Clockwork around here and walk up to him.
         name = talk_target(objective)
