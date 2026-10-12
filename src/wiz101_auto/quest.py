@@ -3247,6 +3247,15 @@ class Quester:
             # dungeon is entered by its first room's sigil.
             dungeon = first_room_with_sigil(dungeon, memory.dungeons)
             entry = memory.dungeons.get(dungeon or "")
+        room = (memory.bosses.get(next((n for n in fought if n in memory.bosses), ""), "") or zone)
+        if (not dungeon or entry is None or not entry.sigil) and "/interiors/" in room.lower():
+            # A room of another name past the sigil's (the Great Beast:
+            # BeastControl's sigil, Deep Spawn up in BeastTopside_03, lost 5
+            # times solo): the sigil dungeon whose doors lead to it.
+            world = room.split("/")[0]
+            dungeon = next((d for d, e in memory.dungeons.items()
+                            if e.sigil and d.split("/")[0] == world and self.doors.route(d, room)), None)
+            entry = memory.dungeons.get(dungeon or "")
         if not dungeon or entry is None or not entry.sigil:
             return False
         # (Already on the list but fought solo, recalled straight into the boss
