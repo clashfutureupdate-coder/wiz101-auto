@@ -1468,7 +1468,17 @@ class Quester:
                 self._step_is_fight = False
             if self._last_progress[0] and objective and self._active_quest:
                 self._momentum = (self._active_quest, time.monotonic())  # mid-way through it
+            # Back in a zone already visited on this objective isn't progress
+            # (Silent Market <-> Ruined Alcazar by one door for 20 minutes,
+            # each zone change restarting the 5-minute stall clock).
+            seen = self.__dict__.setdefault("_progress_zones", {})
+            if objective != self._last_progress[0]:
+                seen.clear()
+            again = zone in seen.get(objective, set())
+            seen.setdefault(objective, set()).add(zone)
             self._last_progress = key
+            if again:
+                return
             self._last_progress_time = time.monotonic()
             self._attempts = 0
             self._wins_since_progress = 0
