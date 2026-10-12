@@ -7471,12 +7471,42 @@ class Quester:
             self._mate_seen = (now, await self._position(), time.monotonic(), False)
         return True
 
+    async def _toward_boss_room(self, objective: str, zone: str) -> bool:
+        """In another room than the Defeat objective's boss's known one (the
+        Great Beast, its marker door going back and forth to BeastTopside_02,
+        for Deep Spawn in Ruined Alcazar's Crab Cave): the learned doors there,
+        else out by the hub button and the gates. True if it acted."""
+        boss_room = DungeonMemory.load().bosses.get(defeat_target(objective or "") or "")
+        if not (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
+                and boss_room.split("/", 1)[0] == zone.split("/", 1)[0]):
+            return False
+        hops = self.doors.route(zone, boss_room)
+        logger.debug(f"toward {boss_room}: route {[h[3] for h in hops]}")
+        if hops and all("/interiors/" in h[3].lower() for h in hops):
+            return False  # (the same dungeon: its rooms in turn, as usual)
+        # The doors once (the learned walk's start can be another door: the
+        # Great Beast's spot for Ruined Alcazar sits on BeastTopside_02's),
+        # then the hub button.
+        tries = self.__dict__.setdefault("_boss_room_walks", {})
+        key = (objective, boss_room)
+        tries[key] = tries.get(key, 0) + 1
+        if tries[key] > 6:
+            return False
+        if tries[key] > 1 or not await self._walk_to_boss_room():
+            from .dungeon_heal import go_to_hub
+
+            logger.info(f"{defeat_target(objective)} is in {boss_room.split('/')[-1]}, no known way "
+                        f"from {zone.split('/')[-1]}: out by the hub button")
+            await go_to_hub(self.client)
+        return True
+
     async def _walk_to_boss_room(self) -> bool:
         """The fight step's boss has a known room and a known chain of doors
         leads there: walk the first door. True if it went (or tried)."""
         target = defeat_target(await self.objective() or "")
         room = DungeonMemory.load().bosses.get(target) if target else None
         zone = await self.client.zone_name() or ""
+        logger.debug(f"walk to boss room: {target!r} in {room}, here {zone}")
         if not room or room == zone:
             return False
         if is_team_up_zone(zone) and not is_team_up_zone(room):
@@ -9684,20 +9714,7 @@ class Quester:
         # walking at it). Not from inside a dungeon or a room (its quest is
         # often 'in' the zone outside: Usunoki in the Town Dojo).
         place = objective_zone(objective) if objective else None
-        boss_room = DungeonMemory.load().bosses.get(defeat_target(objective or "") or "")
-        if (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
-                and boss_room.rsplit("/", 1)[0] == zone.rsplit("/", 1)[0]
-                and self._may_try(objective, zone, "boss_room_doors")):
-            # In another room than the boss's (the Great Beast, its marker
-            # door going back and forth to BeastTopside_02, for Deep Spawn in
-            # Ruined Alcazar's Crab Cave): the learned doors there, else out
-            # by the hub button and the gates.
-            if not await self._walk_to_boss_room():
-                from .dungeon_heal import go_to_hub
-
-                logger.info(f"{defeat_target(objective)} is in {boss_room.split('/')[-1]}, no known way "
-                            f"from {zone.split('/')[-1]}: out by the hub button")
-                await go_to_hub(self.client)
+        if await self._toward_boss_room(objective, zone or ""):
             return
         if (place and zone and place != zone and "/interiors/" not in zone.lower()
                 and not await self._in_dungeon(zone)
@@ -9878,6 +9895,8 @@ class Quester:
 
         logger.info(f"[{zone}] {objective}")
         await self.controller.checkpoint()
+        if await self._toward_boss_room(objective, zone or ""):
+            return
         if (FISHING_PROBE and objective.lower().startswith("catch ")
                 and objective_zone(objective) in (None, zone)
                 and distance(await self._position(), target) < FISH_PROBE_NEAR):
