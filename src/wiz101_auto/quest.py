@@ -6962,7 +6962,10 @@ class Quester:
         # The step's own words decide (the book's fight icon is the whole quest's:
         # 'Talk To Athena' was taken for a fight and routed to "her room").
         fight_step = is_combat_objective(objective or "")
-        if here and fight_step and self._team_idle_for() > TEAM_START_AFTER:
+        # (Only with a teammate seen lately: alone in Deep Spawn's room after
+        # a restart, it "led" the team into his fight by itself, nearly dead.)
+        mate_lately = time.monotonic() - getattr(self, "_mate_seen_at", -1e9) < TEAM_START_AFTER * 2
+        if here and fight_step and mate_lately and self._team_idle_for() > TEAM_START_AFTER:
             # The teammate starts nothing (the player: they stood about in the
             # Eclipse Tower, the bot kept following): we start the fights,
             # mobs and boss, the normal way; they can walk in.
