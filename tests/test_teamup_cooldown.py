@@ -1,4 +1,10 @@
-from wiz101_auto.teamup import cooldown_seconds
+from wiz101_auto.teamup import cooldown_moving, cooldown_seconds
+
+
+def test_stale_cooldown_text_is_not_a_cooldown():
+    assert cooldown_moving(25, 22)
+    assert not cooldown_moving(25, 25)  # left over from an earlier cooldown: queued
+    assert not cooldown_moving(25, None)
 
 
 def test_cooldown_read_from_sigil_text():

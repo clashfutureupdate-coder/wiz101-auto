@@ -676,6 +676,14 @@ def cooldown_seconds(text: str) -> int | None:
     return hours * 3600 + minutes * 60 + seconds
 
 
+COOLDOWN_TICK = 2.5  # seconds between two reads of the cooldown text
+
+
+def cooldown_moving(first: int, second: int | None) -> bool:
+    """Two reads COOLDOWN_TICK apart: a live cooldown went down."""
+    return second is not None and second < first
+
+
 async def _wait_text(client) -> str:
     try:
         w = await ui._visible_named(client.root_window, "TeamUpWaitText")
@@ -863,6 +871,12 @@ async def team_up(quester, dungeon: str) -> str:
         # at "in 00:25" while queued, 13:22, and was waited on over and over.)
         queued = await _path_to_text(client.root_window, ("cancel team up!", "cancel team up"), [])
         wait = None if queued else cooldown_seconds(await _wait_text(client))
+        if wait is not None:
+            # A real cooldown counts down; the text left over from an earlier
+            # one stays put ("in 00:25" at 14:22 and 14:55, queued all along).
+            await asyncio.sleep(COOLDOWN_TICK)
+            if not cooldown_moving(wait, cooldown_seconds(await _wait_text(client))):
+                wait = None
         if wait is not None and wait <= COOLDOWN_WAIT_MAX:
             logger.info(f"team up: TEAM UP! on cooldown ({wait}s): waiting at the sigil, then queueing")
             quester.controller.allow_idle(wait + 60)
