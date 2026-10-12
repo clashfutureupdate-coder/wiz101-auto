@@ -3491,6 +3491,16 @@ class Quester:
                    else f"{limit - n} more before it waits")
             logger.info(f"defeat {n} on {objective!r}; trying again ({why})")
             return
+        if (not main and not self._mainline and quest
+                and self.setbacks.defeats.get(objective, 0) + 1 >= TEAM_UP_AFTER_LOSSES
+                and self._team_instead(quest, objective, self.setbacks.defeats.get(objective, 0) + 1,
+                                       story=True)):
+            # No story quest to follow meanwhile: a side quest's boss lost to
+            # twice gets a Team Up too (the player: a team for any boss lost
+            # alone; Fat Tail Marauder and Razele beat it solo over and over).
+            self.setbacks.defeats.pop(objective, None)
+            self.setbacks.save()
+            return
         if self.setbacks.record_defeat(objective, quest, level, main=main):
             tries = MAIN_DEFEATS_TO_DEFER if main else DEFEATS_TO_DEFER
             until = f"level {level + 1}" if main else f"level {level + 1} or an hour"
