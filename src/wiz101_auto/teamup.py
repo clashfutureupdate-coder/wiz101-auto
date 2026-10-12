@@ -859,7 +859,10 @@ async def team_up(quester, dungeon: str) -> str:
         # "Team Up!  in 01:24" (a cooldown after a team broke up, 13:06) also
         # hides the button: that is NOT a queue (the bot went off to side
         # quests unqueued). Wait it out, then queue.
-        wait = cooldown_seconds(await _wait_text(client))
+        # (But a visible CANCEL TEAM UP! is a queue: the cooldown text stayed
+        # at "in 00:25" while queued, 13:22, and was waited on over and over.)
+        queued = await _path_to_text(client.root_window, ("cancel team up!", "cancel team up"), [])
+        wait = None if queued else cooldown_seconds(await _wait_text(client))
         if wait is not None and wait <= COOLDOWN_WAIT_MAX:
             logger.info(f"team up: TEAM UP! on cooldown ({wait}s): waiting at the sigil, then queueing")
             quester.controller.allow_idle(wait + 60)
