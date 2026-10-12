@@ -133,6 +133,9 @@ async def accept_team_ready(client) -> bool:
         button = await _find_button(w, READY_WORDS)
         if button is not None:
             logger.success(f"team up: the team is ready ({name}); pressing {await button.name()!r}")
+            from .travel_data import note_zone_jump
+
+            note_zone_jump()  # (the team's teleport in: no walked door learned from it)
             await ui.click_center(client, button)
             return True
     return False

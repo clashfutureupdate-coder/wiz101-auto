@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections import deque
 
 from loguru import logger
@@ -58,7 +59,12 @@ async def gate_watch(client, doors, controller) -> None:
         except Exception:
             continue
         if samples and samples[-1][1] and zone and zone != samples[-1][1]:
-            found = walked_through(list(samples), zone)
+            from .travel_data import last_zone_jump
+
+            # (Not right after a jump the bot made: the Team Up teleport from
+            # the Khrysalis hub was learned as a door into Salicar's Sanctum.)
+            jumped = time.monotonic() - last_zone_jump() < 10
+            found = None if jumped else walked_through(list(samples), zone)
             old = samples[-1][1]
             samples.clear()
             if found is not None:
