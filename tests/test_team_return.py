@@ -120,3 +120,10 @@ def test_lost_cards_come_back():
             "Spirit Blade": 1}
     got = restore_counts({"Gargantuan": 1, "Feint": 3}, base)
     assert got == {**base, "Feint": 3}
+
+
+def test_colossus_piece_is_a_statue_piece():
+    from wiz101_auto.collect import loose_names, matches_item
+
+    names = loose_names("Mystic Colossus Piece")
+    assert any(matches_item(n, "KR_StatuePiece03") for n in names)

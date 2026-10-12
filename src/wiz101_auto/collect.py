@@ -67,7 +67,16 @@ def loose_names(item: str) -> list[str]:
     nouns = [w for w in words[1:] if len(w) >= 4 and w.lower() not in GENERIC_WORDS]
     if nouns:
         out.append(max(nouns, key=len))
+    # Known other names in the game's object names ('Mystic Colossus Piece'
+    # is the KR_StatuePiece03 object: a statue piece).
+    for word, other in ITEM_SYNONYMS.items():
+        swapped = [other.title() if w.lower() == word else w for w in words]
+        if swapped != words:
+            out.append(" ".join(swapped[-2:]))
     return list(dict.fromkeys(out))
+
+
+ITEM_SYNONYMS = {"colossus": "statue"}  # a quest's word -> the object names' word
 
 
 def matches_item(item: str, *names: str) -> bool:
