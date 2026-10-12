@@ -2950,6 +2950,11 @@ class Quester:
                 target = "WizardCity/" + (self._chosen_entry.world or "?")
         if not target or not target.startswith("WizardCity/") or zone.startswith("WizardCity/"):
             return False
+        if self._grinding and not self._mainline and self._main_world and self._main_world != "WizardCity":
+            # (Fighting for experience in the main world: not to Wizard City for
+            # a set-aside quest still tracked. 'Say Cheese!' and the grind
+            # took turns at the house's world gate.)
+            return False
         if not await is_free(self.client) or await self._in_dungeon(zone):
             return False
         from .trainer import go_home, is_house
