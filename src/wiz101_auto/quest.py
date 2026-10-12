@@ -4654,12 +4654,28 @@ class Quester:
             # (Or one set aside with its boss, not by name: 'Take Me In'.)
             # (Or skipped by the player's choice: "Shadows and Don'ts", its
             # tutorial left for the player; it's in the book, no giver to seek.)
+            # (Not one marked undoable: 'A River Runs Through It', which the game
+            # calls main, kept 'Chambers of the Mind's next quest from being
+            # asked for in Radiance Reborn; a side quest was taken instead.)
+            # (Nor another world's story skipped for good: 'Into the Sea', Aquila's,
+            # parked Khrysalis's story the same way.)
+            undoable = load_undoable()
+            here_world = zone_world((await self.client.zone_name() or "").split("/", 1)[0]) or ""
+            def elsewhere_skip(q) -> bool:
+                world = zone_world(q.zone.replace(" ", "")) or q.zone
+                if q.name not in self.setbacks.skipped or not (q.zone and here_world):
+                    return False
+                return norm(world) != norm(here_world)
+
             with_boss = {q.name for _, q in all_quests if game_main[id(q)] and q.name in set_aside
-                         and q.name not in self.setbacks.deferred}
+                         and q.name not in self.setbacks.deferred and q.name not in undoable
+                         and not elsewhere_skip(q)}
             parked = sorted(q.name for _, q in all_quests
                             if q.name in set_aside and ((self.setbacks.deferred.get(q.name) or {}).get("main")
                                                         or q.name in waiting or q.name in with_boss))
             self._parked = parked
+            if parked:
+                logger.debug(f"story quests parked (no giver sought): {parked}")
             if self._mainline:
                 self._last_main = sorted(self._mainline)[0]
                 self._last_main_zone = await self.client.zone_name() or ""
