@@ -2225,9 +2225,10 @@ class Quester:
                 return inside
         from .teamup import team_list
 
-        here = [inside for inside, entry in dungeons.items() if entry.outside == outside]
-        if len(here) == 1 and here[0] in team_list():
-            # The only dungeon entered from this zone, and it's team-only: its
+        teams = team_list()
+        here = [inside for inside, entry in dungeons.items() if entry.outside == outside and inside in teams]
+        if len(here) == 1:
+            # The only team-only dungeon entered from this zone: its
             # sigil learned at another spot (Icefall Passage's Sunless Shrine:
             # entered alone, "alone for 64s", out, and in again, over and over).
             return here[0]
