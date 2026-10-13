@@ -212,6 +212,11 @@ def build_data(docs: Path = Path("docs")) -> dict:
         listed = lists.get(name, [])
         # Side worlds are optional: moving on in the story doesn't finish them.
         st = quest_status(listed, completed, book_names, later_world_reached=0 <= i < here_index)
+        if not side and here_index >= 0 and i > here_index:
+            # A story world not reached yet: nothing in it is done. Quest names
+            # shared with earlier worlds ('Monkey Business') marked Novus done
+            # up to there, Polaris and Mirage too.
+            st = dict.fromkeys(st, "todo")
         # Areas in story order; an area visited again later (Marleybone's Royal
         # Museum) is its own group there.
         areas: list[dict] = []
