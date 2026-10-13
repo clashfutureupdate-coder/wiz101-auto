@@ -56,7 +56,7 @@ from .marks import (
     team_return_action,
 )
 from .npc import ServicesMenu
-from .questlist import SIDE_WORLDS, CompletionTracker, load_completed, load_quest_list, norm
+from .questlist import SIDE_WORLDS, CompletionTracker, load_completed, load_quest_list, load_world_lists, norm
 from .safe_teleport import allow_close_landing, allow_engage, teleport_aborted, walk_zone
 from .setbacks import ALWAYS_SKIP, DEFEATS_TO_DEFER, MAIN_DEFEATS_TO_DEFER, Setbacks
 from .teamup import TEAM_UP_NAMES, is_team_up_zone
@@ -1143,6 +1143,12 @@ def closest_name(want: str, names, used=()) -> str | None:
         if best is None or (score, spelling) > best[:2]:
             best = (score, spelling, n)
     return best[2] if best else None
+
+
+def on_story_list(quest: str, lists: dict) -> bool:
+    """`quest` is on a world's story list (docs/quests/<World>.txt)."""
+    want = norm(quest)
+    return bool(want) and any(norm(q.name) == want for listed in lists.values() for q in listed)
 
 
 def boss_room_entered_from(dungeons: dict, boss_room: str, zone: str) -> bool:
@@ -3545,7 +3551,10 @@ class Quester:
                    else f"{limit - n} more before it waits")
             logger.info(f"defeat {n} on {objective!r}; trying again ({why})")
             return
-        if (not main and not self._mainline and quest
+        # (A story quest the game doesn't flag as one: Polaris's 'Sea Chicken',
+        # #11 on its list, went the side path and waited an hour after losing
+        # to First Mate Cranetail twice, no Team Up.)
+        if (not main and quest and (not self._mainline or on_story_list(quest, load_world_lists()))
                 and self.setbacks.defeats.get(objective, 0) + 1 >= TEAM_UP_AFTER_LOSSES
                 and self._team_instead(quest, objective, self.setbacks.defeats.get(objective, 0) + 1,
                                        story=True)):
