@@ -26,6 +26,17 @@ DECK_PAGE = ["WorldView", "DeckConfiguration", "DeckConfigurationWindow", "Contr
 ITEMS_FILE = Path("state") / "deck_items.json"  # {"aoe": name, "single": name, "tab": window name}
 BUTTONS = [*PAGE, "ButtonLayout"]
 DECK_SLOTS = 8  # decks the arrows go through before giving up
+# Item cards (gear and pet spells in a deck) the player keeps crossed out:
+# template-name prefixes. The wand's 0-pip Minor Fire Scorch.
+CROSS_OUT = ("Wand-Fire",)
+ITEM_CARD_SIZE = 0x28  # an ItemSpells entry
+ITEM_CARD_OFF = 0x15  # its crossed-out flag (1 = out), seen against the deck page
+ITEM_CARD_SLOT = 50  # px per card in ItemSpells, 8 to a row
+
+
+def cards_to_cross(cards: list[tuple[str, int]], patterns=CROSS_OUT) -> list[int]:
+    """Indexes of item cards (template name, crossed-out flag) to click."""
+    return [i for i, (name, off) in enumerate(cards) if not off and name.startswith(patterns)]
 
 
 def _same_item(shown: str, want: str) -> bool:
@@ -165,6 +176,44 @@ class DeckItems:
         finally:
             await close_spellbook(self.client)
 
+    async def cross_out_item_cards(self) -> int:
+        """In the worn deck, cross out the item cards the player keeps out of
+        it (CROSS_OUT: the wand's 0-pip Minor Fire Scorch). A quest that took
+        the gear off brought them back. Clicks only; the crossed-out flag is
+        read from memory. How many it crossed out."""
+        from .deck import SPELLBOOK, _spell_name_at, close_spellbook, find_spell_entries, open_spellbook
+
+        await open_spellbook(self.client)
+        try:
+            await ui.click(self.client, [*SPELLBOOK, "Deck"])
+            await asyncio.sleep(1.5)
+            w = await ui.window_at(self.client, [*DECK_PAGE, "ItemSpells"])
+            if w is None:
+                return 0
+            cards = []
+            for e in await find_spell_entries(self.client, w):
+                raw = await e._mem.read_bytes(e.base_address, ITEM_CARD_SIZE)
+                cards.append((await _spell_name_at(e) or "", raw[ITEM_CARD_OFF]))
+            todo = cards_to_cross(cards)
+            r = await w.scale_to_client()
+            for i in todo:
+                x = int(r.x1 + ITEM_CARD_SLOT * (i % 8) + ITEM_CARD_SLOT / 2)
+                y = int(r.y1 + ITEM_CARD_SLOT * (i // 8) + ITEM_CARD_SLOT / 2)
+                await ui.button_click(self.client, x, y)
+                await asyncio.sleep(0.8)
+            if todo:
+                logger.info(f"decks: crossed out {len(todo)} item card(s): "
+                            f"{', '.join(sorted({cards[i][0] for i in todo}))}")
+            return len(todo)
+        finally:
+            await close_spellbook(self.client)
+
+    async def _cross_out(self):
+        try:
+            await self.cross_out_item_cards()
+        except Exception as exc:
+            logger.debug(f"decks: item card check failed: {exc!r}")
+
     async def equip(self, role: str) -> bool:
         """Put on the deck item for `role` ('aoe' or 'single'). True if worn after."""
         d = load()
@@ -175,6 +224,7 @@ class DeckItems:
             if await self.equip_on_deck_page(name):
                 logger.info(f"decks: wearing {name!r} ({role} deck)")
                 _note_cards(role)
+                await self._cross_out()
                 return True
         except Exception as exc:
             logger.debug(f"decks: deck page switch failed: {exc!r}")
@@ -189,6 +239,7 @@ class DeckItems:
         logger.info(f"decks: {'wearing' if ok else 'could not put on'} {name!r} ({role} deck)")
         if ok:
             _note_cards(role)
+            await self._cross_out()
         else:
             await self._any_deck_on(role)
         return ok
