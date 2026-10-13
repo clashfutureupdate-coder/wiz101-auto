@@ -9829,15 +9829,12 @@ class Quester:
             # No fight ahead that we know of, but a dungeon's step can start
             # one ("Read Tapestry Plaque" brought out the Nameless Knight at
             # 73% health: lost by a sliver): topped up from the room's wisps,
-            # else a potion, without leaving.
+            # without leaving. No potion with no fight known ahead (the player:
+            # it drank one after the dungeon's last fight, with only a talk
+            # and the way out left); a surprise fight drinks one in battle.
             hp, mana = await health_mana(self.client)
-            if hp < DUNGEON_TOP_UP:
-                if await heal_in_room(self.client, self.upkeep):
-                    return
-                if self.upkeep.use_potions and await self.client.stats.potion_charge() >= 1.0:
-                    logger.info(f"drinking a potion before going on in the dungeon (hp {hp:.0%})")
-                    await ui.click(self.client, ui.POTION_BUTTON)
-                    await asyncio.sleep(1.5)
+            if hp < DUNGEON_TOP_UP and await heal_in_room(self.client, self.upkeep):
+                return
         if not heal_now:
             logger.debug("in the dungeon with no fight ahead: finishing the objective before healing")
         if (heal_now and in_dungeon and self.upkeep and self.upkeep.use_potions
