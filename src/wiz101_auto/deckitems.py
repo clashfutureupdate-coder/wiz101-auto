@@ -208,7 +208,14 @@ class DeckItems:
         finally:
             await close_spellbook(self.client)
 
-    async def _cross_out(self):
+    async def _cross_out(self, deck: str):
+        """Once per deck per session (a new gear piece puts its cards in: the
+        restart after a gear change checks again). Every switch cost ~10 s,
+        mid-dungeon while a teammate fought."""
+        checked = self.__dict__.setdefault("_crossed_decks", set())
+        if deck in checked:
+            return
+        checked.add(deck)
         try:
             await self.cross_out_item_cards()
         except Exception as exc:
@@ -224,7 +231,7 @@ class DeckItems:
             if await self.equip_on_deck_page(name):
                 logger.info(f"decks: wearing {name!r} ({role} deck)")
                 _note_cards(role)
-                await self._cross_out()
+                await self._cross_out(name)
                 return True
         except Exception as exc:
             logger.debug(f"decks: deck page switch failed: {exc!r}")
@@ -239,7 +246,7 @@ class DeckItems:
         logger.info(f"decks: {'wearing' if ok else 'could not put on'} {name!r} ({role} deck)")
         if ok:
             _note_cards(role)
-            await self._cross_out()
+            await self._cross_out(name)
         else:
             await self._any_deck_on(role)
         return ok
