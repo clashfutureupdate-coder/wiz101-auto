@@ -9821,6 +9821,18 @@ class Quester:
             quest_id = None
         switched = quest_id is not None and quest_id != getattr(self, "_ranked_quest", quest_id)
         recheck = getattr(self, "_pin_recheck", False)
+        zone_here = await self.client.zone_name() or ""
+        if (not recheck and not on_set_aside and objective != getattr(self, "_ranked_for", None)
+                and "/interiors/" in zone_here.lower()
+                and (is_team_up_zone(zone_here) or await self._in_dungeon(zone_here))):
+            # In a dungeon: the quest the game tracks there is the one (the
+            # player: the book paged through at the start of the Basstille,
+            # 10-15 s each time, while the teammate fought). Ranked again
+            # outside.
+            self._ranked_for = objective
+            self._ranked_quest = quest_id
+            switched = False
+            logger.debug("in a dungeon: following the tracked quest (quest book not opened)")
         if recheck or objective != getattr(self, "_ranked_for", None) and (
             on_set_aside or switched
             or time.monotonic() - getattr(self, "_last_rank", -1e9) > RANK_QUESTS_EVERY
