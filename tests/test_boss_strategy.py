@@ -764,6 +764,8 @@ def test_avalon_boss_bans():
     assert castable("Black Annie") == {"Mythblade", "Orthrus"}
     # (Only single-target attacks of rank 6+ get the Scarecrow: traps are fine.)
     assert castable("The Pendragon") == {"Myth Trap", "Mythblade", "Orthrus"}
+    # Polaris: every blade or trap brings Rasputin a Borealis Minion.
+    assert castable("Rasputin") == {"Orthrus"}
 
 
 def test_poseidon_and_the_sand_squid():

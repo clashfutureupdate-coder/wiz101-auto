@@ -2825,6 +2825,10 @@ BOSS_BANS = {
         or (c.is_damage and any(e.kind not in (EffectKind.DAMAGE, EffectKind.DOT) for e in c.effects))),
     # The Sand Squid's tentacles Earthquake (blade wipe) for every heal.
     "sand squid tentacle": lambda c: c.is_heal,
+    # Polaris (the player's list): Rasputin, "The Rat" (Borealis Peaks), spawns
+    # a Borealis Minion for every blade or trap cast, and steals traps onto us.
+    "rasputin": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
+    "the rat": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
 }
 
 

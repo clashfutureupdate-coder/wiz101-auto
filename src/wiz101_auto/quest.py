@@ -2026,6 +2026,16 @@ class Quester:
             logger.info(f"heading to {dest}: its door is in {entry.split('/')[-1]}; going there first")
             return await self.go_to_zone(entry, max_hops - 1) and True
         hops = self.doors.route(zone, dest)
+        if not hops and max_hops > 1:
+            # No door here, and the door's own room has no gate (the Shadow
+            # Palace's door is in the Magi House, entered from The Hive): a
+            # zone the gates reach where a chain of known doors starts.
+            start_zone = next((z for z in self.doors.doors if z != zone and self.doors.route(z, dest)
+                               and gate_toward(zone, z, self._bad_gates)), None)
+            if start_zone:
+                logger.info(f"heading to {dest}: known doors from {start_zone.split('/')[-1]}; "
+                            "going there first")
+                return await self.go_to_zone(start_zone, max_hops - 1) and True
         if hops:
             _z, door, spot, nxt = hops[0]
             logger.info(f"heading to {dest}: through the door at ({door[0]:.0f}, {door[1]:.0f}) into "
