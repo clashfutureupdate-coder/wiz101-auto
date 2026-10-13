@@ -283,7 +283,10 @@ async def click_center(client, window) -> None:
 
 
 _STRAY_CLOSE = {"exit", "Exit", "Close", "close", "btnClose", "CloseButton", "Close_Button", "btnExit",
-                "closeButton", "ExitButton", "btnX"}
+                "closeButton", "ExitButton", "btnX",
+                # The Team Up window (a player joined the queue mid-fight):
+                # its X keeps the queue; over the cards every cast failed.
+                "CloseTeamUpButton"}
 _BATTLE_WINDOWS = {"PlanningPhase", "CombatRoot", "ChatWindowFrame", "HealthAndMana", "CombatScreen"}
 
 

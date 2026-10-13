@@ -637,6 +637,15 @@ class Fighter(CombatHandler):
             # the wizard sat out the rounds (Night Weavers, Monquistans).
             logger.warning("the spellbook is open over the battle: closing it first")
             await close_spellbook(self.client)
+        try:
+            from ..teamup import close_waiting_window
+
+            if await close_waiting_window(self.client):
+                # (A player joined the Team Up queue mid-fight: its window sat
+                # over the cards and every cast and Pass missed for rounds.)
+                logger.warning("closed the Team Up window over the battle (the queue stays)")
+        except Exception as exc:
+            logger.debug(f"team up window check failed: {exc!r}")
 
         # No minions at all (the player: slow, and their worth is hard to
         # judge): never summoned, and a minion card drawn is discarded.
