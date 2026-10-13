@@ -904,7 +904,15 @@ class Fighter(CombatHandler):
                                 f"({battle.me.health}/{battle.me.max_health} health)")
                     await ui.click(self.client, ui.POTION_BUTTON)
                     await asyncio.sleep(1.5)
-                    return
+                    try:
+                        drunk = await self.client.stats.potion_charge() < charge
+                    except Exception:
+                        drunk = False
+                    if drunk:
+                        return
+                    # (Against Snowbeard the click did nothing in battle: no
+                    # move, the round timed out and the wizard died.)
+                    logger.warning("the potion didn't take in battle; passing")
                 await self.pass_button()
                 return
 
