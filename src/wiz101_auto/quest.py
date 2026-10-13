@@ -105,7 +105,7 @@ STATUS_EVERY_SECONDS = 20.0
 SWITCH_QUEST_AFTER = 4  # same objective, this many interactions without change
 MAX_QUEST_SLOTS = 6
 MAX_BOOK_PAGES = 30  # the quest book, read to its last page (was 5: quests went missing)
-RANK_FULL_EVERY = 600.0  # a full quest-book read at least this often (else memory says "unchanged")
+RANK_FULL_EVERY = 1800.0  # a full quest-book read at least this often (else memory and the cache say)
 RANK_QUESTS_EVERY = 120.0  # at most this often: quest-book rankings (on objective changes)
 NO_MAIN_ALERT_SECONDS = 1800.0  # "no main quest in the book" alert at most this often
 # Quest book window paths (mapped by Deimos).
@@ -1273,6 +1273,63 @@ def _write_quest_book(quests: list[QuestEntry], chosen: QuestEntry | None, world
         QUEST_BOOK_FILE.write_text(json.dumps(data, indent=1), encoding="utf-8")
     except OSError:
         pass
+
+
+QUEST_CACHE_FILE = Path("state") / "quest_cache.json"  # the quests of the last full book read
+CACHE_FIELDS = ("activity", "mainline", "reward", "world", "goal", "zone", "target", "fight", "counted")
+
+
+def quest_cache_data(quests: list[QuestEntry], memory: set[str], pin: str | None, now: float) -> dict:
+    """What a full book read saw, for rankings without the book: each quest's
+    fields (not its slot, tracking or hops), and the memory names the book
+    didn't show (memory also keeps names like 'A Foul Decree')."""
+    read = {norm(q.name) for q in quests}
+    return {
+        "time": now,
+        "pin": pin or "",
+        "extras": sorted({norm(n) for n in memory} - read),
+        "quests": {q.name: {f: getattr(q, f) for f in CACHE_FIELDS} for q in quests},
+    }
+
+
+def quests_from_cache(cache: dict | None, memory: set[str], tracked: str, objective: str,
+                      pin: str | None, now: float) -> list[QuestEntry] | None:
+    """The book as it stands, from the last full read's cache and the quest
+    names in memory; None when only the book can tell (a new quest, the cache
+    too old, the pin changed). Quests cached but gone from memory are left out
+    (done, as on a full read). The tracked one gets the live objective."""
+    if not cache or not memory or now - float(cache.get("time") or 0) > RANK_FULL_EVERY:
+        return None
+    if (cache.get("pin") or "") != (pin or ""):
+        return None
+    quests = cache.get("quests") or {}
+    extras = set(cache.get("extras") or ())
+    wanted = {norm(n) for n in memory}
+    known = {norm(n) for n in quests}
+    if wanted - known - extras:
+        return None  # a quest the book hasn't shown yet
+    gone = known - wanted
+    if quests and len(gone) * 2 > len(quests):
+        return None  # (a short memory read: half the book "done" at once)
+    out = []
+    for name, fields in quests.items():
+        if norm(name) not in wanted:
+            continue
+        try:
+            entry = QuestEntry(slot=0, name=name, **{f: fields[f] for f in CACHE_FIELDS if f in fields})
+        except TypeError:
+            return None
+        if tracked and norm(name) == norm(tracked):
+            entry.active = True
+            if objective and objective.strip() != entry.goal:
+                # The step moved on since the read: its target and kind from the live text.
+                entry.goal = objective.strip()
+                entry.target = (talk_target(objective) or defeat_target(objective)
+                                or locate_target(objective) or operate_target(objective) or "")
+                entry.fight = is_combat_objective(objective)
+                entry.counted = bool(re.search(r"\(\d+ of \d+\)", objective))
+        out.append(entry)
+    return out
 
 
 class Quester:
@@ -4472,6 +4529,39 @@ class Quester:
             logger.debug(f"quest memory read failed: {exc!r}")
             return None
 
+    async def _save_quest_cache(self, quests: list[QuestEntry]):
+        """After a complete book read: its quests (state/quest_cache.json)."""
+        got = await self._quests_in_memory()
+        try:
+            data = quest_cache_data(quests, set(got[0]) if got else set(), self._pin, time.time())
+            QUEST_CACHE_FILE.parent.mkdir(exist_ok=True)
+            QUEST_CACHE_FILE.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+
+    async def _quests_from_cache(self) -> list[tuple[int, QuestEntry]] | None:
+        """The book without opening it: the cached read, minus what memory
+        no longer holds, the tracked quest's step live. None: read the book."""
+        try:
+            cache = json.loads(QUEST_CACHE_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        got = await self._quests_in_memory()
+        if got is None or not isinstance(cache, dict):
+            return None
+        memory, tracked = got
+        try:
+            objective = await self.objective() if tracked else ""
+        except Exception:
+            objective = ""
+        entries = quests_from_cache(cache, set(memory), tracked, objective, self._pin, time.time())
+        if entries is None:
+            return None
+        zone = await self.client.zone_name() or ""
+        for q in entries:
+            q.hops = hops_to_place(zone, q.world) if q.world else None
+        return [(0, q) for q in entries]
+
     async def _tracked_main_in_memory(self) -> bool:
         """The quest the game tracks is a main-story one (memory's flag)."""
         try:
@@ -4552,6 +4642,15 @@ class Quester:
         return True
 
     async def _prioritize_quests(self) -> bool:
+        cached = await self._quests_from_cache()
+        if cached is not None:
+            # The book's other quests don't change between reads; memory
+            # says which are still there (the player: the book was paged
+            # through "constantly", 10-15 s each time).
+            switched = await self._rank_quests(cached, True, 0, from_cache=True)
+            if switched is not None:
+                return switched
+            logger.debug("quest priority: another quest to track: reading the quest book")
         if not await self._open_quest_book():
             logger.warning("could not open the quest book to rank quests")
             return False
@@ -4631,468 +4730,481 @@ class Quester:
                 # them): twice a false "no main quest" alert, and the pin
                 # dropped. Such a read decides nothing is done.
                 complete = False
-            busy = getattr(self, "_momentum", None)
-            if (not complete and busy and busy[0] and time.monotonic() - busy[1] < 600
-                    and busy[0] not in {q.name for _, q in all_quests}):
-                # A partial read without the quest we're mid-way through
-                # ('Romancing El Yollotl', missing from a read in a clearing:
-                # dropped for grinding): no ranking from it.
-                logger.warning(f"the quest book read left out {busy[0]!r}, the quest under way: keeping it")
-                return False
             if complete:
-                from .teamup import drop_team_dungeons
-
-                # (Not on the first read after a start: nothing to compare with.)
-                dropped = (drop_team_dungeons({q.name for _, q in all_quests}, self._book_names)
-                           if self._book_names else [])
-                for d in dropped:
-                    logger.info(f"{d.split('/')[-1]}'s quest is done: alone there again")
-            det = self._detour_names()
-            game_main = {id(q): q.mainline for _, q in all_quests}
-            # None of the world's own quests in the book yet: its lead-in (the
-            # quests before its list starts) is whatever the game calls main.
-            # Only before the world has begun: once one of its listed quests is
-            # done, a gap in its story isn't a lead-in ('The Spiral Cup', main
-            # to the game, was taken for Zafaria's story after 'Meddling Wizards').
-            lead_in = det is not None and not any(norm(q.name) in det[2] for _, q in all_quests)
-            if lead_in:
-                from .questlist import load_completed
-
-                start = norm((det[0].get("start") or {}).get("quest", ""))
-                begun = {norm(n) for n in load_completed()} & (det[2] - {start})
-                lead_in = not begun
-            for _, q in all_quests:
-                if det is not None and lead_in:
-                    pass  # (the game's main-story flag stands)
-                elif det is not None:
-                    # A detour (state/detour.json: Grizzleheim, then Wintertusk,
-                    # before Celestia): its world's story is the main story now,
-                    # everything else waits.
-                    # The game's main-story flag, for quests on that world's list
-                    # (a 'SIDE ×N' tag on the list isn't 'side quest': the
-                    # player's Celestia guide has Explorer101 as main story).
-                    q.mainline = game_main[id(q)] and norm(q.name) in det[2]
-                elif q.mainline and in_side_world(q):
-                    q.mainline = False  # (a side world's story: a side quest here)
-            if det is not None and complete:
-                # Its story begun: one of its main-story quests in the book (a
-                # side quest on its list doesn't count: Eudora's crafting quest
-                # 'The Razor's Edge' is on Avalon's, and Gamma was never visited).
-                # (On its list and main story to the game too: 'The Razor's
-                # Edge' is on Avalon's list untagged, a crafting quest.)
-                # (Any listed quest: a 'SIDE ×1' tag counts its side branches,
-                # 'Steamed Crab' is the story; Sir Pike was visited again and
-                # again with it in the book.)
-                # (A lead-in, but not another world's story quest: Aquila's
-                # 'Into the Sea' counted as Azteca begun, and Cyrus Drake was
-                # never visited for 'First Star I See Tonight'.)
-                from .questlist import load_world_lists
-
-                try:
-                    others = {norm(x.name) for w, lst in load_world_lists().items()
-                              if not same_world(w, det[0].get("world")) for x in lst}
-                except Exception:
-                    others = set()
-                has = any((norm(q.name) in det[2] and game_main[id(q)])
-                          or (lead_in and game_main[id(q)] and norm(q.name) not in others
-                              and (not q.zone or same_world(q.zone, det[0].get("world"))
-                                   or same_world(q.zone, "Wizard City")))
-                          for _, q in all_quests)
-                self._detour_start(det[0], has)
-                await self._note_detour_gap(has)
-            activities = {q.name for _, q in all_quests if q.activity}
-            self._wanted_items = {  # main-story/spell quests only: side quests are ignored
-                collect_item_name(q.goal): q.name
-                for _, q in all_quests
-                if collect_item_name(q.goal) and (q.mainline or q.activity)
-            }
-            # A quest missing from a partial read isn't done: only a full read counts.
-            done = self.completions.update({q.name for _, q in all_quests}) if complete else set()
-            if not complete:
-                logger.warning(f"read {len(all_quests)} quests over {pages} pages without reaching the end")
-            for name in done:
-                listed = self.quest_order.get(norm(name))
-                where = f" (#{listed.index} on the quest list)" if listed else ""
-                logger.success(f"quest completed: {name!r}{where}")
-            self._talk_again_after_completion(done)
-            self.completions.log(done)
-            active = next((q for _, q in all_quests if q.active), None)
-            self._active_quest = active.name if active else self._active_quest
-            level = await self.client.stats.reference_level()
-            set_aside = self.setbacks.set_aside(level) | load_undoable()
-            # A boss that beat us blocks every quest that needs him ('Take Me
-            # In' after 'Blind Eye' was set aside for Kravenly: same fight, a
-            # sixth loss).
-            lost_to = {norm(defeat_target(d.get("objective", "")) or "")
-                       for n, d in self.setbacks.deferred.items() if n in set_aside and not d.get("stuck")}
-            lost_to.discard("")
-            for _, q in all_quests:
-                if q.name not in set_aside and q.target and norm(q.target) in lost_to:
-                    set_aside = set_aside | {q.name}
-            detour_mains = [q for _, q in all_quests if q.mainline] if det is not None else []
-            if (detour_mains and all(q.name in set_aside for q in detour_mains)
-                    and not any(self._detour_stays(q.name) for q in detour_mains)):
-                # The detour's quest is stuck (set aside after trying every
-                # way): the main story (Celestia) meanwhile, not grinding (the
-                # player); the detour comes back when its quest is retried.
-                if det[0].get("when_stuck") == "side":
-                    # (The player's order for Avalon: its side quests, then
-                    # Zafaria's, then the Wysteria story; the game's other
-                    # 'main story', Aquila's, took it to Atlantea instead.)
-                    logger.info(f"detour quest {detour_mains[0].name!r} set aside as stuck: "
-                                f"{det[0]['world']}'s side quests meanwhile")
-                    for _, q in all_quests:
-                        q.mainline = False
-                else:
-                    logger.info(f"detour quest {detour_mains[0].name!r} set aside as stuck: "
-                                "the main story meanwhile")
-                    for _, q in all_quests:
-                        q.mainline = game_main[id(q)] and not in_side_world(q)
-            elif det is not None and complete and not detour_mains and not self._detour_gap_pending():
-                # No detour quest at all, its NPCs asked already: the main story
-                # (Celestia) meanwhile, never grinding (the player).
-                if det[0].get("when_stuck") == "side":
-                    # (Avalon between story quests: its side quests, not the
-                    # game's other "main story", Aquila's 'Into the Sea'.)
-                    logger.info(f"no {det[0]['world']} story quest in the book: its side quests meanwhile")
-                    for _, q in all_quests:
-                        q.mainline = False
-                else:
-                    logger.info("no detour quest to follow: the main story meanwhile")
-                    for _, q in all_quests:
-                        q.mainline = game_main[id(q)] and not in_side_world(q)
-                self._detour_fallback = True
-            if any(q.active and q.mainline and not in_side_world(q) for _, q in all_quests):
-                here_now = await self.client.zone_name() or ""
-                if here_now and not here_now.startswith(("Grizzleheim", "WizardCity/Interiors")):
-                    MAIN_STORY_ZONE_FILE.write_text(json.dumps({"zone": here_now, "asked": 0}),
-                                                    encoding="utf-8")
-            logger.debug(
-                f"quest book: {[q.name for _, q in all_quests]}; set aside: {sorted(set_aside)}"
-            )
-            for _, q in all_quests:
-                flags = "main" if q.mainline else "spell" if q.activity else "side"
-                tracked = ", tracked" if q.active else ""
-                step = f"{q.goal or q.target!r}{' (fight)' if q.fight else ''}"
-                step += " (counted)" if q.counted else ""
-                logger.debug(f"  {q.name!r} [{flags}{tracked}] {q.zone}/{q.world!r} {q.hops} hops: {step}")
-            self._mainline = {q.name for _, q in all_quests if q.mainline}
-            # A story quest in the book but set aside (waiting for a team for
-            # Ozel Underwater Cat): not "no main quest", no giver to look for.
-            # (Only a story quest set aside for now, not one skipped for good: the
-            # game calls 'A River Runs Through It' main, and no giver was asked
-            # after 'Smart Food'.)
-            from .teamup import team_list
-
-            # (Or a quest waiting for its team: 'One Voice Above The Din' was
-            # set aside as a side quest, "no main quest", and NPCs were asked.)
-            waiting = set(team_list().values())
-            # (Or one set aside with its boss, not by name: 'Take Me In'.)
-            # (Or skipped by the player's choice: "Shadows and Don'ts", its
-            # tutorial left for the player; it's in the book, no giver to seek.)
-            # (Not one marked undoable: 'A River Runs Through It', which the game
-            # calls main, kept 'Chambers of the Mind's next quest from being
-            # asked for in Radiance Reborn; a side quest was taken instead.)
-            # (Nor another world's story skipped for good: 'Into the Sea', Aquila's,
-            # parked Khrysalis's story the same way.)
-            undoable = load_undoable()
-            here_world = zone_world((await self.client.zone_name() or "").split("/", 1)[0]) or ""
-            def elsewhere_skip(q) -> bool:
-                world = zone_world(q.zone.replace(" ", "")) or q.zone
-                if q.name not in self.setbacks.skipped or not (q.zone and here_world):
-                    return False
-                return norm(world) != norm(here_world)
-
-            with_boss = {q.name for _, q in all_quests if game_main[id(q)] and q.name in set_aside
-                         and q.name not in self.setbacks.deferred and q.name not in undoable
-                         and not elsewhere_skip(q)}
-            parked = sorted(q.name for _, q in all_quests
-                            if q.name in set_aside and ((self.setbacks.deferred.get(q.name) or {}).get("main")
-                                                        or q.name in waiting or q.name in with_boss))
-            self._parked = parked
-            if parked:
-                logger.debug(f"story quests parked (no giver sought): {parked}")
-            if self._mainline:
-                self._last_main = sorted(self._mainline)[0]
-                self._last_main_zone = await self.client.zone_name() or ""
-                _save_last_main(self._last_main, self._last_main_zone)
-            elif complete and self._last_main_zone != "swept" and not parked:
-                # (After a restart: where we are now.)
-                self._last_main_zone = self._last_main_zone or await self.client.zone_name() or ""
-                # The main quest was just handed in and no next one came: its
-                # giver is usually near (asked an hour ago, before it had it).
-                logger.info(f"no main quest after {self._last_main!r}: asking the NPCs of "
-                            f"{self._last_main_zone.split('/')[-1]} again")
-                self.givers.sweep_now(self._last_main_zone)
-                self._last_main_zone = "swept"
-                _save_last_main(self._last_main, self._last_main_zone)
-            alert_due = time.monotonic() - self._no_main_alerted > NO_MAIN_ALERT_SECONDS
-            if complete and not self._mainline and alert_due and not parked:
-                # The next main quest isn't in the book (after 'Weights and
-                # Measures', 'The Last Meow' was never offered): side quests
-                # meanwhile, but the player should know.
-                self._no_main_alerted = time.monotonic()
-                after = f" after {self._last_main!r}" if self._last_main else ""
-                logger.warning(f"ALERT: main quest stuck: no main-story quest in the book{after}; "
-                               "its giver wasn't found")
-                self._no_main_reads += 1
-                if FARM_WHEN_STUCK and self._no_main_reads >= 2:  # two full reads 30 min apart: really none
-                    self._farm_when_stuck(self._last_main or "(none)", "no main-story quest in the book")
-            names = {q.name for _, q in all_quests}
-            if self._pin_new_from is not None and complete:
-                # Class/spell quests first, then main story ('Mything Persons'
-                # over an old side quest a short read had missed).
-                new = [q for _, q in all_quests if q.name not in self._pin_new_from]
-                new.sort(key=lambda q: (not q.activity, not q.mainline))
-                if new:
-                    self._pin = new[0].name
-                    save_pin(self._pin)
-                    others = ", ".join(repr(q.name) for q in new[1:])
-                    logger.success(f"new quest from the visit: {new[0].name!r}; following it"
-                                   + (f" (also new: {others})" if others else ""))
-                self._pin_new_from = None
-            prev_names = self._book_names
-            if complete:
-                self._book_names = names  # only a full read says what's in the book
-                try:
-                    BOOK_SIZE_FILE.write_text(json.dumps({"size": len(names)}), encoding="utf-8")
-                except OSError:
-                    pass
-                self._talk_again_after_turn_in(prev_names - names, names - prev_names)
-                await self._confirm_handed_in(prev_names - names)
-            elif self._active_quest and self._active_quest in prev_names - names:
-                # (A short read too: the quest under way gone right after a talk.)
-                self._talk_again_after_turn_in({self._active_quest}, set())
-            here = await self.client.zone_name() or ""
-            # Side quests fill in only in the main quest's world (where it will be
-            # picked up again at the next level), never a trip to another world.
-            main_quests = [q for _, q in all_quests if q.mainline]
-            main_world = next((w for w in map(quest_world, main_quests) if w), None)
-            if main_world is None and main_quests:
-                # The book's area name may be unknown; its objective can place it.
-                zones = [objective_zone(q.goal) for q in main_quests if q.goal]
-                main_world = next((z.split("/", 1)[0] for z in zones if z), None)
-            world = main_world or self._main_world or (here.split("/", 1)[0] if here else None)
-            det_now = self._detour_names()
-            if main_world is None and det_now is not None and det_now[0].get("when_stuck") == "side":
-                # Between the detour world's story quests: its side quests, in
-                # its world (the last "main" seen was Aquila's 'Into the Sea',
-                # and the bot set off to visit Aquila's NPCs).
-                world = det_now[0]["world"]
-            if main_world is None and self._detour_names() is None and _side_world(world):
-                # A side-world detour over (Wintertusk): the story goes on in
-                # its own world (Celestia), side quests there rather than
-                # grinding in Grizzleheim for want of a quest.
-                from .questlist import story_world
-
-                story = story_world()
-                if story:
-                    if self.__dict__.get("_story_logged") != story:
-                        self._story_logged = story
-                        logger.info(f"the detour is over: the main story's world is {story} again")
-                    world = story
-            self._main_world = zone_world(world)
-            hunted_out = time.monotonic() - getattr(self, "_hunt_exhausted", -1e9) < HUNT_EXHAUSTED_SECONDS
-            chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
-                                  FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=hunted_out)
-            if chosen is None and not hunted_out:
-                # Any side quest in the book, earlier worlds included, beats
-                # fighting for experience (the player: "grinding is very
-                # inefficient; the previous world's side quests instead").
-                chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
-                                      FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=True)
-            grinding = chosen is None and bool(all_quests)
-            # A side quest from an earlier world while this world's people
-            # haven't been asked (the player: in Azteca for Clemente Moraga with
-            # Khrysalis's NPCs never asked for side quests).
-            self._side_elsewhere = bool(
-                chosen is not None and not (chosen.mainline or chosen.activity) and world
-                and quest_world(chosen) != world)
-            if grinding and not self._grinding:
-                logger.warning(f"nothing to do in {world}: fighting there for experience until a level-up")
-                for q in main_quests:
-                    self._alert_main_stuck(q.name, f"nothing left to do in {world}; grinding for a level")
-            self._grinding = grinding
-            if grinding and main_quests:
-                # Track the main quest so its marker leads back into its world;
-                # _grind fights outdoors there instead of taking on the boss.
-                chosen = main_quests[0]
-            chosen = self._apply_pin([q for _, q in all_quests], chosen, set_aside, prev_names, complete)
-            chosen = self._later_story_first(chosen, [q for _, q in all_quests], set_aside)
-            if is_team_up_zone(here):
-                # In a Team Up run: the quest the team came for, whatever else
-                # ranks first (a class quest walked it out of the keep).
-                from .teamup import team_list
-
-                team_quest = team_list().get(here) or ""
-                team_q = next((q for _, q in all_quests if q.name == team_quest), None)
-                if team_q is not None:
-                    chosen = team_q
-            # Mid-way through a quest (its objective moved on minutes ago): keep
-            # it. 'Left Behind' was at Nomoonaga's Tower when a ranking outside
-            # the dungeon switched to the pinned 'Oni No Death'.
-            if self._momentum and time.monotonic() - self._momentum[1] < MOMENTUM_SECONDS:
-                busy = next((q for _, q in all_quests if q.name == self._momentum[0]), None)
-                # (Never over a class quest: 'Bone to be Wild' waited while
-                # Wizard Tours was kept for being mid-way.)
-                spell_first = bool(chosen and chosen.activity) and not (busy and busy.activity)
-                # (Nor a side quest over the main story: the player's main
-                # quest first; 'Bad Vacation' kept 'Ship of Tears' waiting.)
-                busy_counts = bool(busy and (busy.mainline or busy.activity))
-                main_first = bool(chosen and chosen.mainline) and not busy_counts
-                # (Nor over the player's pick: 'Hobble Gobble', the pinned line's
-                # next quest, waited behind a mid-way 'Art History'.)
-                pin_first = bool(chosen and self._pin and chosen.name == self._pin)
-                if (busy is not None and busy is not chosen and busy.name not in set_aside
-                        and not in_side_world(busy) and not spell_first and not main_first
-                        and not pin_first and busy.name != getattr(self, "_gap_vehicle", None)):
-                    # (Not one tracked only to ride the Spiral Map to the asking:
-                    # 'A Scrap of Trouble' kept over the player's fallback order.)
-                    logger.info(f"keeping {busy.name!r}: mid-way through it "
-                                f"({time.monotonic() - self._momentum[1]:.0f}s since its last step)")
-                    chosen, self._grinding = busy, False
-            # (A room entered by a door counts too: Nomoonaga's tower, after a
-            # heal trip's Recall, went back to the main quest instead.)
-            inside = is_team_up_zone(here) or await self._in_dungeon(here) or "/interiors/" in here.lower()
-            if not inside:
-                self._ranked_outside = True
-            from .dungeons import load_done
-
-            first_room = self._dungeon[1] if self._dungeon else here
-            if inside and first_room in load_done():
-                # A dungeon finished before (the Labyrinth, back in for a spell
-                # quest's boss): its own quest doesn't come first again.
-                if self._done_dungeon_logged != first_room:
-                    self._done_dungeon_logged = first_room
-                    logger.info(f"in {first_room.split('/')[-1]}, done before: "
-                                "its own quest doesn't come first")
-            elif inside:
-                # After the pin: the dungeon's own quest ('The Right Combination')
-                # opens the way to the pinned one ('Weird Science') in there.
-                first = self._dungeon[1] if self._dungeon else here
-                if self._entry_quest[0] != first:
-                    # The quest tracked on entering this dungeon: none known
-                    # after a restart inside it (the game then tracked what
-                    # the bot had picked before, not what it entered with).
-                    entered = self._active_quest if self._ranked_outside else ""
-                    self._entry_quest = (first, entered or "")
-                # In a building that isn't a dungeon (the Myth school) the
-                # quest the game tracks isn't the room's own ('Give a Dog a
-                # Bone', just accepted from Cyrus Drake, won over the class
-                # quest picked).
-                real = is_team_up_zone(here) or await self._in_dungeon(here)
-                instances = story_instance_quests(here) if real else set()
-                local = dungeon_quest([q for _, q in all_quests], here, objective_zone, set_aside,
-                                      self.setbacks.skipped,
-                                      entered_with=self._entry_quest[1] if real else "",
-                                      story_instances=instances)
-                # A side quest of the dungeon's doesn't beat the main story (the
-                # player: the main quest only; 'Tomb of the Zebra Kings' kept the
-                # bot at Zanga Zebu over 'Into the Zebra Tomb'), except farming.
-                # (A story INSTANCE quest is the main story's own step.)
-                side_over_main = (local is not None and not local.mainline and chosen is not None
-                                  and chosen.mainline
-                                  and norm(local.name) not in instances
-                                  and not Farm.load().active)
-                # (Never one set aside: 'Blind Eye', lost 5 times to Kravenly,
-                # came straight back in his tower and lost a sixth.)
-                if local and local is not chosen and not side_over_main and local.name not in set_aside:
-                    logger.info(f"in the dungeon: {local.name!r} comes first (this dungeon's own quest)")
-                    chosen, self._grinding = local, False
-            # No errand detours while a quest is pinned: the player picked it
-            # (quick Marleybone errands chained ahead of the Myth class quest).
-            if (ERRAND_DETOURS and not self._grinding and not self._pin
-                    and not await self._in_dungeon(here)):
-                errand = errand_detour([q for _, q in all_quests], chosen, set_aside, world)
-                if errand:
-                    if not errand.active:
-                        logger.info(f"quick errand first: {errand.name!r} ({errand.goal or errand.target}), "
-                                    f"then back to {chosen.name!r}")
-                    chosen = errand
-            side_chosen = chosen is not None and not chosen.mainline  # (none at all: nothing to choose)
-            if not self._mainline and side_chosen and self._detour_gap_pending() and not self._pin:
-                # On the way to ask for the story's next quest: a quest of the
-                # story's world tracked meanwhile, so the house's world gate
-                # opens the Spiral Map on that world (it opened on The Spiral
-                # Cup's Wysteria and took the bot there again and again).
-                try:
-                    gap_world = json.loads(DETOUR_GAP_FILE.read_text(encoding="utf-8")).get("zone", "")
-                except (OSError, ValueError):
-                    gap_world = ""
-                gap_world = SPIRAL_WORLD_NAMES.get(gap_world.split("/", 1)[0], gap_world.split("/", 1)[0])
-                there = [q for _, q in all_quests if q.zone and norm(q.zone) == norm(gap_world)
-                         and q.name not in set_aside]
-                if there and chosen not in there:
-                    logger.info(f"tracking {there[0].name!r} meanwhile: the Spiral Map then opens on "
-                                f"{there[0].zone} (the story's next quest is asked for there)")
-                    chosen = there[0]
-                    self._gap_vehicle = chosen.name
-            self._last_quests = [q for _, q in all_quests]
-            _write_quest_book([q for _, q in all_quests], chosen, world)
-            self._chosen_entry = chosen
-            best = next(((p, q) for p, q in all_quests if q is chosen), None)
-            # A spell quest that left the book was completed: it usually taught a spell.
-            finished = self._activity_quests - activities
-            if finished and self.progression:
-                self.progression.request_check(f"finished {', '.join(sorted(finished))}")
-            self._activity_quests = activities
-            if best is None:
-                return False
-            page, entry = best
-            # The book's encounter icon: this step is a fight even when its
-            # words aren't ("Open Locked Door": beat the Kettleheads guarding it).
-            self._step_is_fight = entry.fight
-            if entry.active:
-                logger.info(f"quest priority: continuing {entry.name!r}")
-                if complete:
-                    self._remember_ranking({q.name for _, q in all_quests}, entry.name, set_aside)
-                return False
-            # Straight back to its page from the last one read (it went back
-            # to page 1 and forward again: the book flicked through twice).
-            first_on_page = next(q.name for p, q in all_quests if p == page)
-            for _ in range(pages):
-                if await self._first_book_name() == first_on_page:
-                    break
-                if not await self._turn_page(back_button):
-                    break  # the first page already
-            info = [*QUEST_LIST, f"wndQuestInfo{entry.slot}", "questInfoWindow", "wndQuestInfo"]
-            slot = [*info, "btnActivate"]
-            for attempt in range(TRACK_TRIES):
-                await ui.click(self.client, slot)
-                await asyncio.sleep(0.6)
-                if await ui.is_visible(self.client, [*info, "imgActiveQuest"]):
-                    break
-                if await ui.modal_box(self.client) is not None:
-                    break  # a message about it: handled below
-                logger.debug(f"tracking {entry.name!r} didn't take (try {attempt + 1}); clicking again")
-            else:
-                logger.warning(f"could not track {entry.name!r}; will try again at the next ranking")
-                self._ranked_for = None
-                self._last_rank = -1e9
-                self._track_failed = True
-                return False
-            box = await ui.modal_box(self.client)
-            if box and "quest helper is not allowed" in (await ui.modal_text(box)).lower():
-                # e.g. a Duel Arena (PvP) quest: nothing the bot can follow.
-                logger.warning(f"quest helper not allowed for {entry.name!r}; skipping that quest")
-                self.setbacks.skipped.add(entry.name)
-                self.setbacks.save()
-                await ui.dismiss_notice(self.client)
-                self._ranked_for = None
-                self._last_rank = -1e9
-                return False
-            kind = "spell/activity" if entry.activity else "main story" if entry.mainline else "side"
-            if entry.goal and not is_combat_objective(entry.goal):
-                kind += ", no fight"
-            where = f"{entry.world}, {entry.hops} hops" if entry.hops is not None else entry.world
-            logger.success(f"quest priority: tracking {entry.name!r} ({kind} quest in {where})")
-            self._active_quest = entry.name
-            self._active_is_main = entry.mainline
-            if complete:
-                self._remember_ranking({q.name for _, q in all_quests}, entry.name, set_aside)
-            return True
+                await self._save_quest_cache([q for _, q in all_quests])
+            return bool(await self._rank_quests(all_quests, complete, pages))
         finally:
             await self._close_quest_book()
+
+    async def _rank_quests(self, all_quests: list[tuple[int, QuestEntry]], complete: bool, pages: int,
+                           from_cache: bool = False) -> bool | None:
+        """Rank the quests read (or taken from the cache) and track the
+        chosen one; True if it switched. From the cache, None when the
+        chosen quest isn't the tracked one (tracking needs the book)."""
+        back_button = [*QUEST_LIST, "btnPrevPage"]
+        busy = getattr(self, "_momentum", None)
+        if (not complete and busy and busy[0] and time.monotonic() - busy[1] < 600
+                and busy[0] not in {q.name for _, q in all_quests}):
+            # A partial read without the quest we're mid-way through
+            # ('Romancing El Yollotl', missing from a read in a clearing:
+            # dropped for grinding): no ranking from it.
+            logger.warning(f"the quest book read left out {busy[0]!r}, the quest under way: keeping it")
+            return False
+        if complete:
+            from .teamup import drop_team_dungeons
+
+            # (Not on the first read after a start: nothing to compare with.)
+            dropped = (drop_team_dungeons({q.name for _, q in all_quests}, self._book_names)
+                       if self._book_names else [])
+            for d in dropped:
+                logger.info(f"{d.split('/')[-1]}'s quest is done: alone there again")
+        det = self._detour_names()
+        game_main = {id(q): q.mainline for _, q in all_quests}
+        # None of the world's own quests in the book yet: its lead-in (the
+        # quests before its list starts) is whatever the game calls main.
+        # Only before the world has begun: once one of its listed quests is
+        # done, a gap in its story isn't a lead-in ('The Spiral Cup', main
+        # to the game, was taken for Zafaria's story after 'Meddling Wizards').
+        lead_in = det is not None and not any(norm(q.name) in det[2] for _, q in all_quests)
+        if lead_in:
+            from .questlist import load_completed
+
+            start = norm((det[0].get("start") or {}).get("quest", ""))
+            begun = {norm(n) for n in load_completed()} & (det[2] - {start})
+            lead_in = not begun
+        for _, q in all_quests:
+            if det is not None and lead_in:
+                pass  # (the game's main-story flag stands)
+            elif det is not None:
+                # A detour (state/detour.json: Grizzleheim, then Wintertusk,
+                # before Celestia): its world's story is the main story now,
+                # everything else waits.
+                # The game's main-story flag, for quests on that world's list
+                # (a 'SIDE ×N' tag on the list isn't 'side quest': the
+                # player's Celestia guide has Explorer101 as main story).
+                q.mainline = game_main[id(q)] and norm(q.name) in det[2]
+            elif q.mainline and in_side_world(q):
+                q.mainline = False  # (a side world's story: a side quest here)
+        if det is not None and complete:
+            # Its story begun: one of its main-story quests in the book (a
+            # side quest on its list doesn't count: Eudora's crafting quest
+            # 'The Razor's Edge' is on Avalon's, and Gamma was never visited).
+            # (On its list and main story to the game too: 'The Razor's
+            # Edge' is on Avalon's list untagged, a crafting quest.)
+            # (Any listed quest: a 'SIDE ×1' tag counts its side branches,
+            # 'Steamed Crab' is the story; Sir Pike was visited again and
+            # again with it in the book.)
+            # (A lead-in, but not another world's story quest: Aquila's
+            # 'Into the Sea' counted as Azteca begun, and Cyrus Drake was
+            # never visited for 'First Star I See Tonight'.)
+            from .questlist import load_world_lists
+
+            try:
+                others = {norm(x.name) for w, lst in load_world_lists().items()
+                          if not same_world(w, det[0].get("world")) for x in lst}
+            except Exception:
+                others = set()
+            has = any((norm(q.name) in det[2] and game_main[id(q)])
+                      or (lead_in and game_main[id(q)] and norm(q.name) not in others
+                          and (not q.zone or same_world(q.zone, det[0].get("world"))
+                               or same_world(q.zone, "Wizard City")))
+                      for _, q in all_quests)
+            self._detour_start(det[0], has)
+            await self._note_detour_gap(has)
+        activities = {q.name for _, q in all_quests if q.activity}
+        self._wanted_items = {  # main-story/spell quests only: side quests are ignored
+            collect_item_name(q.goal): q.name
+            for _, q in all_quests
+            if collect_item_name(q.goal) and (q.mainline or q.activity)
+        }
+        # A quest missing from a partial read isn't done: only a full read counts.
+        done = self.completions.update({q.name for _, q in all_quests}) if complete else set()
+        if not complete:
+            logger.warning(f"read {len(all_quests)} quests over {pages} pages without reaching the end")
+        for name in done:
+            listed = self.quest_order.get(norm(name))
+            where = f" (#{listed.index} on the quest list)" if listed else ""
+            logger.success(f"quest completed: {name!r}{where}")
+        self._talk_again_after_completion(done)
+        self.completions.log(done)
+        active = next((q for _, q in all_quests if q.active), None)
+        self._active_quest = active.name if active else self._active_quest
+        level = await self.client.stats.reference_level()
+        set_aside = self.setbacks.set_aside(level) | load_undoable()
+        # A boss that beat us blocks every quest that needs him ('Take Me
+        # In' after 'Blind Eye' was set aside for Kravenly: same fight, a
+        # sixth loss).
+        lost_to = {norm(defeat_target(d.get("objective", "")) or "")
+                   for n, d in self.setbacks.deferred.items() if n in set_aside and not d.get("stuck")}
+        lost_to.discard("")
+        for _, q in all_quests:
+            if q.name not in set_aside and q.target and norm(q.target) in lost_to:
+                set_aside = set_aside | {q.name}
+        detour_mains = [q for _, q in all_quests if q.mainline] if det is not None else []
+        if (detour_mains and all(q.name in set_aside for q in detour_mains)
+                and not any(self._detour_stays(q.name) for q in detour_mains)):
+            # The detour's quest is stuck (set aside after trying every
+            # way): the main story (Celestia) meanwhile, not grinding (the
+            # player); the detour comes back when its quest is retried.
+            if det[0].get("when_stuck") == "side":
+                # (The player's order for Avalon: its side quests, then
+                # Zafaria's, then the Wysteria story; the game's other
+                # 'main story', Aquila's, took it to Atlantea instead.)
+                logger.info(f"detour quest {detour_mains[0].name!r} set aside as stuck: "
+                            f"{det[0]['world']}'s side quests meanwhile")
+                for _, q in all_quests:
+                    q.mainline = False
+            else:
+                logger.info(f"detour quest {detour_mains[0].name!r} set aside as stuck: "
+                            "the main story meanwhile")
+                for _, q in all_quests:
+                    q.mainline = game_main[id(q)] and not in_side_world(q)
+        elif det is not None and complete and not detour_mains and not self._detour_gap_pending():
+            # No detour quest at all, its NPCs asked already: the main story
+            # (Celestia) meanwhile, never grinding (the player).
+            if det[0].get("when_stuck") == "side":
+                # (Avalon between story quests: its side quests, not the
+                # game's other "main story", Aquila's 'Into the Sea'.)
+                logger.info(f"no {det[0]['world']} story quest in the book: its side quests meanwhile")
+                for _, q in all_quests:
+                    q.mainline = False
+            else:
+                logger.info("no detour quest to follow: the main story meanwhile")
+                for _, q in all_quests:
+                    q.mainline = game_main[id(q)] and not in_side_world(q)
+            self._detour_fallback = True
+        if any(q.active and q.mainline and not in_side_world(q) for _, q in all_quests):
+            here_now = await self.client.zone_name() or ""
+            if here_now and not here_now.startswith(("Grizzleheim", "WizardCity/Interiors")):
+                MAIN_STORY_ZONE_FILE.write_text(json.dumps({"zone": here_now, "asked": 0}),
+                                                encoding="utf-8")
+        logger.debug(
+            f"quest book: {[q.name for _, q in all_quests]}; set aside: {sorted(set_aside)}"
+        )
+        for _, q in all_quests:
+            flags = "main" if q.mainline else "spell" if q.activity else "side"
+            tracked = ", tracked" if q.active else ""
+            step = f"{q.goal or q.target!r}{' (fight)' if q.fight else ''}"
+            step += " (counted)" if q.counted else ""
+            logger.debug(f"  {q.name!r} [{flags}{tracked}] {q.zone}/{q.world!r} {q.hops} hops: {step}")
+        self._mainline = {q.name for _, q in all_quests if q.mainline}
+        # A story quest in the book but set aside (waiting for a team for
+        # Ozel Underwater Cat): not "no main quest", no giver to look for.
+        # (Only a story quest set aside for now, not one skipped for good: the
+        # game calls 'A River Runs Through It' main, and no giver was asked
+        # after 'Smart Food'.)
+        from .teamup import team_list
+
+        # (Or a quest waiting for its team: 'One Voice Above The Din' was
+        # set aside as a side quest, "no main quest", and NPCs were asked.)
+        waiting = set(team_list().values())
+        # (Or one set aside with its boss, not by name: 'Take Me In'.)
+        # (Or skipped by the player's choice: "Shadows and Don'ts", its
+        # tutorial left for the player; it's in the book, no giver to seek.)
+        # (Not one marked undoable: 'A River Runs Through It', which the game
+        # calls main, kept 'Chambers of the Mind's next quest from being
+        # asked for in Radiance Reborn; a side quest was taken instead.)
+        # (Nor another world's story skipped for good: 'Into the Sea', Aquila's,
+        # parked Khrysalis's story the same way.)
+        undoable = load_undoable()
+        here_world = zone_world((await self.client.zone_name() or "").split("/", 1)[0]) or ""
+        def elsewhere_skip(q) -> bool:
+            world = zone_world(q.zone.replace(" ", "")) or q.zone
+            if q.name not in self.setbacks.skipped or not (q.zone and here_world):
+                return False
+            return norm(world) != norm(here_world)
+
+        with_boss = {q.name for _, q in all_quests if game_main[id(q)] and q.name in set_aside
+                     and q.name not in self.setbacks.deferred and q.name not in undoable
+                     and not elsewhere_skip(q)}
+        parked = sorted(q.name for _, q in all_quests
+                        if q.name in set_aside and ((self.setbacks.deferred.get(q.name) or {}).get("main")
+                                                    or q.name in waiting or q.name in with_boss))
+        self._parked = parked
+        if parked:
+            logger.debug(f"story quests parked (no giver sought): {parked}")
+        if self._mainline:
+            self._last_main = sorted(self._mainline)[0]
+            self._last_main_zone = await self.client.zone_name() or ""
+            _save_last_main(self._last_main, self._last_main_zone)
+        elif complete and self._last_main_zone != "swept" and not parked:
+            # (After a restart: where we are now.)
+            self._last_main_zone = self._last_main_zone or await self.client.zone_name() or ""
+            # The main quest was just handed in and no next one came: its
+            # giver is usually near (asked an hour ago, before it had it).
+            logger.info(f"no main quest after {self._last_main!r}: asking the NPCs of "
+                        f"{self._last_main_zone.split('/')[-1]} again")
+            self.givers.sweep_now(self._last_main_zone)
+            self._last_main_zone = "swept"
+            _save_last_main(self._last_main, self._last_main_zone)
+        alert_due = time.monotonic() - self._no_main_alerted > NO_MAIN_ALERT_SECONDS
+        if complete and not self._mainline and alert_due and not parked:
+            # The next main quest isn't in the book (after 'Weights and
+            # Measures', 'The Last Meow' was never offered): side quests
+            # meanwhile, but the player should know.
+            self._no_main_alerted = time.monotonic()
+            after = f" after {self._last_main!r}" if self._last_main else ""
+            logger.warning(f"ALERT: main quest stuck: no main-story quest in the book{after}; "
+                           "its giver wasn't found")
+            self._no_main_reads += 1
+            if FARM_WHEN_STUCK and self._no_main_reads >= 2:  # two full reads 30 min apart: really none
+                self._farm_when_stuck(self._last_main or "(none)", "no main-story quest in the book")
+        names = {q.name for _, q in all_quests}
+        if self._pin_new_from is not None and complete:
+            # Class/spell quests first, then main story ('Mything Persons'
+            # over an old side quest a short read had missed).
+            new = [q for _, q in all_quests if q.name not in self._pin_new_from]
+            new.sort(key=lambda q: (not q.activity, not q.mainline))
+            if new:
+                self._pin = new[0].name
+                save_pin(self._pin)
+                others = ", ".join(repr(q.name) for q in new[1:])
+                logger.success(f"new quest from the visit: {new[0].name!r}; following it"
+                               + (f" (also new: {others})" if others else ""))
+            self._pin_new_from = None
+        prev_names = self._book_names
+        if complete:
+            self._book_names = names  # only a full read says what's in the book
+            try:
+                BOOK_SIZE_FILE.write_text(json.dumps({"size": len(names)}), encoding="utf-8")
+            except OSError:
+                pass
+            self._talk_again_after_turn_in(prev_names - names, names - prev_names)
+            await self._confirm_handed_in(prev_names - names)
+        elif self._active_quest and self._active_quest in prev_names - names:
+            # (A short read too: the quest under way gone right after a talk.)
+            self._talk_again_after_turn_in({self._active_quest}, set())
+        here = await self.client.zone_name() or ""
+        # Side quests fill in only in the main quest's world (where it will be
+        # picked up again at the next level), never a trip to another world.
+        main_quests = [q for _, q in all_quests if q.mainline]
+        main_world = next((w for w in map(quest_world, main_quests) if w), None)
+        if main_world is None and main_quests:
+            # The book's area name may be unknown; its objective can place it.
+            zones = [objective_zone(q.goal) for q in main_quests if q.goal]
+            main_world = next((z.split("/", 1)[0] for z in zones if z), None)
+        world = main_world or self._main_world or (here.split("/", 1)[0] if here else None)
+        det_now = self._detour_names()
+        if main_world is None and det_now is not None and det_now[0].get("when_stuck") == "side":
+            # Between the detour world's story quests: its side quests, in
+            # its world (the last "main" seen was Aquila's 'Into the Sea',
+            # and the bot set off to visit Aquila's NPCs).
+            world = det_now[0]["world"]
+        if main_world is None and self._detour_names() is None and _side_world(world):
+            # A side-world detour over (Wintertusk): the story goes on in
+            # its own world (Celestia), side quests there rather than
+            # grinding in Grizzleheim for want of a quest.
+            from .questlist import story_world
+
+            story = story_world()
+            if story:
+                if self.__dict__.get("_story_logged") != story:
+                    self._story_logged = story
+                    logger.info(f"the detour is over: the main story's world is {story} again")
+                world = story
+        self._main_world = zone_world(world)
+        hunted_out = time.monotonic() - getattr(self, "_hunt_exhausted", -1e9) < HUNT_EXHAUSTED_SECONDS
+        chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
+                              FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=hunted_out)
+        if chosen is None and not hunted_out:
+            # Any side quest in the book, earlier worlds included, beats
+            # fighting for experience (the player: "grinding is very
+            # inefficient; the previous world's side quests instead").
+            chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
+                                  FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=True)
+        grinding = chosen is None and bool(all_quests)
+        # A side quest from an earlier world while this world's people
+        # haven't been asked (the player: in Azteca for Clemente Moraga with
+        # Khrysalis's NPCs never asked for side quests).
+        self._side_elsewhere = bool(
+            chosen is not None and not (chosen.mainline or chosen.activity) and world
+            and quest_world(chosen) != world)
+        if grinding and not self._grinding:
+            logger.warning(f"nothing to do in {world}: fighting there for experience until a level-up")
+            for q in main_quests:
+                self._alert_main_stuck(q.name, f"nothing left to do in {world}; grinding for a level")
+        self._grinding = grinding
+        if grinding and main_quests:
+            # Track the main quest so its marker leads back into its world;
+            # _grind fights outdoors there instead of taking on the boss.
+            chosen = main_quests[0]
+        chosen = self._apply_pin([q for _, q in all_quests], chosen, set_aside, prev_names, complete)
+        chosen = self._later_story_first(chosen, [q for _, q in all_quests], set_aside)
+        if is_team_up_zone(here):
+            # In a Team Up run: the quest the team came for, whatever else
+            # ranks first (a class quest walked it out of the keep).
+            from .teamup import team_list
+
+            team_quest = team_list().get(here) or ""
+            team_q = next((q for _, q in all_quests if q.name == team_quest), None)
+            if team_q is not None:
+                chosen = team_q
+        # Mid-way through a quest (its objective moved on minutes ago): keep
+        # it. 'Left Behind' was at Nomoonaga's Tower when a ranking outside
+        # the dungeon switched to the pinned 'Oni No Death'.
+        if self._momentum and time.monotonic() - self._momentum[1] < MOMENTUM_SECONDS:
+            busy = next((q for _, q in all_quests if q.name == self._momentum[0]), None)
+            # (Never over a class quest: 'Bone to be Wild' waited while
+            # Wizard Tours was kept for being mid-way.)
+            spell_first = bool(chosen and chosen.activity) and not (busy and busy.activity)
+            # (Nor a side quest over the main story: the player's main
+            # quest first; 'Bad Vacation' kept 'Ship of Tears' waiting.)
+            busy_counts = bool(busy and (busy.mainline or busy.activity))
+            main_first = bool(chosen and chosen.mainline) and not busy_counts
+            # (Nor over the player's pick: 'Hobble Gobble', the pinned line's
+            # next quest, waited behind a mid-way 'Art History'.)
+            pin_first = bool(chosen and self._pin and chosen.name == self._pin)
+            if (busy is not None and busy is not chosen and busy.name not in set_aside
+                    and not in_side_world(busy) and not spell_first and not main_first
+                    and not pin_first and busy.name != getattr(self, "_gap_vehicle", None)):
+                # (Not one tracked only to ride the Spiral Map to the asking:
+                # 'A Scrap of Trouble' kept over the player's fallback order.)
+                logger.info(f"keeping {busy.name!r}: mid-way through it "
+                            f"({time.monotonic() - self._momentum[1]:.0f}s since its last step)")
+                chosen, self._grinding = busy, False
+        # (A room entered by a door counts too: Nomoonaga's tower, after a
+        # heal trip's Recall, went back to the main quest instead.)
+        inside = is_team_up_zone(here) or await self._in_dungeon(here) or "/interiors/" in here.lower()
+        if not inside:
+            self._ranked_outside = True
+        from .dungeons import load_done
+
+        first_room = self._dungeon[1] if self._dungeon else here
+        if inside and first_room in load_done():
+            # A dungeon finished before (the Labyrinth, back in for a spell
+            # quest's boss): its own quest doesn't come first again.
+            if self._done_dungeon_logged != first_room:
+                self._done_dungeon_logged = first_room
+                logger.info(f"in {first_room.split('/')[-1]}, done before: "
+                            "its own quest doesn't come first")
+        elif inside:
+            # After the pin: the dungeon's own quest ('The Right Combination')
+            # opens the way to the pinned one ('Weird Science') in there.
+            first = self._dungeon[1] if self._dungeon else here
+            if self._entry_quest[0] != first:
+                # The quest tracked on entering this dungeon: none known
+                # after a restart inside it (the game then tracked what
+                # the bot had picked before, not what it entered with).
+                entered = self._active_quest if self._ranked_outside else ""
+                self._entry_quest = (first, entered or "")
+            # In a building that isn't a dungeon (the Myth school) the
+            # quest the game tracks isn't the room's own ('Give a Dog a
+            # Bone', just accepted from Cyrus Drake, won over the class
+            # quest picked).
+            real = is_team_up_zone(here) or await self._in_dungeon(here)
+            instances = story_instance_quests(here) if real else set()
+            local = dungeon_quest([q for _, q in all_quests], here, objective_zone, set_aside,
+                                  self.setbacks.skipped,
+                                  entered_with=self._entry_quest[1] if real else "",
+                                  story_instances=instances)
+            # A side quest of the dungeon's doesn't beat the main story (the
+            # player: the main quest only; 'Tomb of the Zebra Kings' kept the
+            # bot at Zanga Zebu over 'Into the Zebra Tomb'), except farming.
+            # (A story INSTANCE quest is the main story's own step.)
+            side_over_main = (local is not None and not local.mainline and chosen is not None
+                              and chosen.mainline
+                              and norm(local.name) not in instances
+                              and not Farm.load().active)
+            # (Never one set aside: 'Blind Eye', lost 5 times to Kravenly,
+            # came straight back in his tower and lost a sixth.)
+            if local and local is not chosen and not side_over_main and local.name not in set_aside:
+                logger.info(f"in the dungeon: {local.name!r} comes first (this dungeon's own quest)")
+                chosen, self._grinding = local, False
+        # No errand detours while a quest is pinned: the player picked it
+        # (quick Marleybone errands chained ahead of the Myth class quest).
+        if (ERRAND_DETOURS and not self._grinding and not self._pin
+                and not await self._in_dungeon(here)):
+            errand = errand_detour([q for _, q in all_quests], chosen, set_aside, world)
+            if errand:
+                if not errand.active:
+                    logger.info(f"quick errand first: {errand.name!r} ({errand.goal or errand.target}), "
+                                f"then back to {chosen.name!r}")
+                chosen = errand
+        side_chosen = chosen is not None and not chosen.mainline  # (none at all: nothing to choose)
+        if not self._mainline and side_chosen and self._detour_gap_pending() and not self._pin:
+            # On the way to ask for the story's next quest: a quest of the
+            # story's world tracked meanwhile, so the house's world gate
+            # opens the Spiral Map on that world (it opened on The Spiral
+            # Cup's Wysteria and took the bot there again and again).
+            try:
+                gap_world = json.loads(DETOUR_GAP_FILE.read_text(encoding="utf-8")).get("zone", "")
+            except (OSError, ValueError):
+                gap_world = ""
+            gap_world = SPIRAL_WORLD_NAMES.get(gap_world.split("/", 1)[0], gap_world.split("/", 1)[0])
+            there = [q for _, q in all_quests if q.zone and norm(q.zone) == norm(gap_world)
+                     and q.name not in set_aside]
+            if there and chosen not in there:
+                logger.info(f"tracking {there[0].name!r} meanwhile: the Spiral Map then opens on "
+                            f"{there[0].zone} (the story's next quest is asked for there)")
+                chosen = there[0]
+                self._gap_vehicle = chosen.name
+        self._last_quests = [q for _, q in all_quests]
+        _write_quest_book([q for _, q in all_quests], chosen, world)
+        self._chosen_entry = chosen
+        best = next(((p, q) for p, q in all_quests if q is chosen), None)
+        # A spell quest that left the book was completed: it usually taught a spell.
+        finished = self._activity_quests - activities
+        if finished and self.progression:
+            self.progression.request_check(f"finished {', '.join(sorted(finished))}")
+        self._activity_quests = activities
+        if best is None:
+            return False
+        page, entry = best
+        # The book's encounter icon: this step is a fight even when its
+        # words aren't ("Open Locked Door": beat the Kettleheads guarding it).
+        self._step_is_fight = entry.fight
+        if entry.active:
+            unopened = " (quest book not opened)" if from_cache else ""
+            logger.info(f"quest priority: continuing {entry.name!r}{unopened}")
+            if complete:
+                self._remember_ranking({q.name for _, q in all_quests}, entry.name, set_aside)
+            return False
+        if from_cache:
+            return None  # tracking it is a click in the book: the full read
+        # Straight back to its page from the last one read (it went back
+        # to page 1 and forward again: the book flicked through twice).
+        first_on_page = next(q.name for p, q in all_quests if p == page)
+        for _ in range(pages):
+            if await self._first_book_name() == first_on_page:
+                break
+            if not await self._turn_page(back_button):
+                break  # the first page already
+        info = [*QUEST_LIST, f"wndQuestInfo{entry.slot}", "questInfoWindow", "wndQuestInfo"]
+        slot = [*info, "btnActivate"]
+        for attempt in range(TRACK_TRIES):
+            await ui.click(self.client, slot)
+            await asyncio.sleep(0.6)
+            if await ui.is_visible(self.client, [*info, "imgActiveQuest"]):
+                break
+            if await ui.modal_box(self.client) is not None:
+                break  # a message about it: handled below
+            logger.debug(f"tracking {entry.name!r} didn't take (try {attempt + 1}); clicking again")
+        else:
+            logger.warning(f"could not track {entry.name!r}; will try again at the next ranking")
+            self._ranked_for = None
+            self._last_rank = -1e9
+            self._track_failed = True
+            return False
+        box = await ui.modal_box(self.client)
+        if box and "quest helper is not allowed" in (await ui.modal_text(box)).lower():
+            # e.g. a Duel Arena (PvP) quest: nothing the bot can follow.
+            logger.warning(f"quest helper not allowed for {entry.name!r}; skipping that quest")
+            self.setbacks.skipped.add(entry.name)
+            self.setbacks.save()
+            await ui.dismiss_notice(self.client)
+            self._ranked_for = None
+            self._last_rank = -1e9
+            return False
+        kind = "spell/activity" if entry.activity else "main story" if entry.mainline else "side"
+        if entry.goal and not is_combat_objective(entry.goal):
+            kind += ", no fight"
+        where = f"{entry.world}, {entry.hops} hops" if entry.hops is not None else entry.world
+        logger.success(f"quest priority: tracking {entry.name!r} ({kind} quest in {where})")
+        self._active_quest = entry.name
+        self._active_is_main = entry.mainline
+        if complete:
+            self._remember_ranking({q.name for _, q in all_quests}, entry.name, set_aside)
+        return True
 
     def _note_hand_in(self, objective: str, zone: str):
         """A "Talk To X" objective of the tracked quest: X is who it's likely
