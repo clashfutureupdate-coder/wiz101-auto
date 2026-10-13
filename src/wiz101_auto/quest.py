@@ -556,7 +556,10 @@ FALLBACK_SIDE_PLACES = {"Celestia": ("Grizzleheim/GH_HFjord",),  # Wintertusk
                         # side quests, then Zafaria's, not Wizard City's.)
                         "Azteca": ("Avalon", "Zafaria"),
                         # (The player: side quests from the furthest world first.)
-                        "Khrysalis": ("Azteca", "Avalon", "Zafaria")}
+                        "Khrysalis": ("Azteca", "Avalon", "Zafaria"),
+                        # (Queued for the Sea Chicken with nothing in Polaris,
+                        # it ground for a level: Khrysalis's side quests first.)
+                        "Polaris": ("Khrysalis", "Azteca", "Avalon", "Zafaria")}
 
 
 def in_place(zone: str, place: str) -> bool:
