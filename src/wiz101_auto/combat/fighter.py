@@ -333,13 +333,6 @@ def _save_my_stats(me) -> None:
 
 
 
-IN_BATTLE_POTION = 0.3  # below this share of health, a round we'd pass is a potion instead
-
-
-def drink_instead_of_pass(hp: int, max_hp: int, charge: float) -> bool:
-    """Passing at low health with a potion on hand: drink it instead."""
-    return charge >= 1.0 and max_hp > 0 and hp / max_hp < IN_BATTLE_POTION
-
 class Fighter(CombatHandler):
     def __init__(self, client, strategy: Strategy, *, max_discards: int = 99, flee_below: float = 0.0,
                  rollouts: bool = True):
@@ -892,27 +885,6 @@ class Fighter(CombatHandler):
                     logger.info(f"crit: {text}")
 
             if action.kind is ActionKind.PASS or action.card is None:
-                try:
-                    charge = await self.client.stats.potion_charge()
-                except Exception:
-                    charge = 0.0
-                if drink_instead_of_pass(battle.me.health, battle.me.max_health, charge):
-                    # A pass at low health: a potion instead (it uses the turn).
-                    # (At 377/3947 it passed three rounds waiting for Orthrus on
-                    # a Bullhemoth with 1,204 left, and died.)
-                    logger.info(f"drinking a potion instead of passing "
-                                f"({battle.me.health}/{battle.me.max_health} health)")
-                    await ui.click(self.client, ui.POTION_BUTTON)
-                    await asyncio.sleep(1.5)
-                    try:
-                        drunk = await self.client.stats.potion_charge() < charge
-                    except Exception:
-                        drunk = False
-                    if drunk:
-                        return
-                    # (Against Snowbeard the click did nothing in battle: no
-                    # move, the round timed out and the wizard died.)
-                    logger.warning("the potion didn't take in battle; passing")
                 await self.pass_button()
                 return
 
