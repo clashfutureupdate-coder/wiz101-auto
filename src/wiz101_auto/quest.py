@@ -7629,7 +7629,24 @@ class Quester:
         Great Beast, its marker door going back and forth to BeastTopside_02,
         for Deep Spawn in Ruined Alcazar's Crab Cave): the learned doors there,
         else out by the hub button and the gates. True if it acted."""
-        boss_room = DungeonMemory.load().bosses.get(defeat_target(objective or "") or "")
+        memory = DungeonMemory.load()
+        boss_room = memory.bosses.get(defeat_target(objective or "") or "")
+        entry = memory.dungeons.get(boss_room or "")
+        if (boss_room and entry is not None and zone not in (boss_room, entry.outside)
+                and is_team_up_zone(boss_room)):
+            # A team-only boss room with a learned sigil: straight to the
+            # sigil's zone by the known gates and doors (the Tree Root's
+            # SpiritPlane, its sigil in the Shadow Palace past the Magi House:
+            # the quest marker led to Kondha Desert's fights over and over).
+            tries = self.__dict__.setdefault("_sigil_zone_walks", {})
+            key = (objective, entry.outside)
+            tries[key] = tries.get(key, 0) + 1
+            if tries[key] <= 4:
+                logger.info(f"{defeat_target(objective)} is team-only in {boss_room.split('/')[-1]}: "
+                            f"to its sigil in {entry.outside.split('/')[-1]}")
+                if await self.go_to_zone(entry.outside, max_hops=8):
+                    tries.pop(key, None)
+                return True
         if not (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
                 and boss_room.split("/", 1)[0] == zone.split("/", 1)[0]):
             return False
