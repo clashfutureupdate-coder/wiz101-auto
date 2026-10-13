@@ -2036,6 +2036,12 @@ class Quester:
                 logger.info(f"heading to {dest}: known doors from {start_zone.split('/')[-1]}; "
                             "going there first")
                 return await self.go_to_zone(start_zone, max_hops - 1) and True
+        if hops and is_team_up_zone(hops[0][3]) and not is_team_up_zone(zone):
+            # (The Galleries' sigil was learned as a door: 'Shadow Palace' went
+            # through it alone, after the Galleries were put on the team list
+            # for two defeats, and lost again.)
+            logger.info(f"not going through into {hops[0][3].split('/')[-1]} alone (team-only dungeon)")
+            return False
         if hops:
             _z, door, spot, nxt = hops[0]
             logger.info(f"heading to {dest}: through the door at ({door[0]:.0f}, {door[1]:.0f}) into "
