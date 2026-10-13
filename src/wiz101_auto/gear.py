@@ -32,6 +32,7 @@ PREV_PAGE = [*PAGE, "leftscroll"]
 # (Not the amulet: its item card is the player's pick, Reshuffle or Tower
 # Shield; a check swapped the Reshuffle amulet away.)
 SLOT_TABS = ("Tab_Hat", "Tab_Robe", "Tab_Shoes", "Tab_Athame", "Tab_Ring")
+OPEN_SETTLE = 1.5  # seconds after the backpack opens before its tabs take clicks
 ITEMS_PER_PAGE = 8
 MAX_PAGES = 4
 BACKPACK_CHECK_SECONDS = 20.0  # how often to look for new items (a memory read, no UI)
@@ -268,6 +269,12 @@ class GearManager:
                 return True
             await self.client.send_key(Keycode.B, 0.1)
             await asyncio.sleep(1.2)
+            if await ui.is_visible(self.client, PAGE):
+                # Tab clicks right after it opens are lost: every tab then read
+                # as the amulets it opened on, and the Tricksy Hood, Cape and
+                # boots a quest had taken off were "not in the backpack".
+                await asyncio.sleep(OPEN_SETTLE)
+                return True
         return await ui.is_visible(self.client, PAGE)
 
     async def _close(self):
