@@ -164,8 +164,38 @@ class BringOut:
                 return True
         return False
 
-    async def step(self, objective: str, zone: str, name: str, fight: bool = False) -> bool:
-        """One thing toward bringing `name` out. True if it acted."""
+    async def _fight_room(self, objective: str) -> bool:
+        """Last thing to try in a room: its enemies (the Sea Chicken ship's
+        "Press X to climb" into the cargo hold only came after its pirates were
+        beaten; in a fresh copy the bot walked at the hatch for minutes)."""
+        try:
+            mobs = await self.client.get_mobs()
+        except Exception:
+            return False
+        if not mobs:
+            return False
+        me = await self.client.body.position()
+        spots = []
+        for m in mobs:
+            try:
+                spots.append(await m.location())
+            except Exception:
+                continue
+        if not spots or not await self._ready_for_boss():
+            return bool(spots)
+        spot = min(spots, key=lambda p: math.dist((p.x, p.y), (me.x, me.y)))
+        logger.info(f"stuck on {objective!r}: beating this room's enemies first")
+        from .safe_teleport import allow_engage
+
+        allow_engage(self.client)
+        await self.client.teleport(spot)
+        await asyncio.sleep(3.0)
+        return True
+
+    async def step(self, objective: str, zone: str, name: str, fight: bool = False,
+                   fight_room: bool = False) -> bool:
+        """One thing toward bringing `name` out. True if it acted. `fight_room`:
+        when nothing else is left, the room's enemies."""
         from .puzzles import find_switches, solve_by_trying
 
         key = (objective, zone)
@@ -200,7 +230,7 @@ class BringOut:
         no_switching = key in self._switched or not switches or fight
         kind = next_kind(boss is not None, len(pickups), len(npcs), no_switching)
         if kind is None:
-            return False
+            return fight_room and await self._fight_room(objective)
         if kind == "boss":
             if not await self._ready_for_boss():
                 return True

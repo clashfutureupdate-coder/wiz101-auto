@@ -1549,7 +1549,7 @@ class Quester:
                 quest = None
             here = await self.client.zone_name() or ""
             in_dungeon = bool(quest) and await self._in_dungeon(here)
-            if in_dungeon and await self.bring_out.step(objective, here, "the way on"):
+            if in_dungeon and await self.bring_out.step(objective, here, "the way on", fight_room=True):
                 # Stuck inside a dungeon: work the room first, one thing per
                 # stall (its NPCs, pick-ups, boss, switches). The gate into
                 # Balor's room in a fresh Troika Palace copy opened only after
