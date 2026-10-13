@@ -679,6 +679,22 @@ def cooldown_seconds(text: str) -> int | None:
 COOLDOWN_TICK = 2.5  # seconds between two reads of the cooldown text
 
 
+def queued_signs(badge: str | None, queued_window: bool) -> bool:
+    """Anything on screen that says we're queued: the Waiting window, or the
+    Team Up badge shown at all (its text isn't always readable while queued).
+    No badge (None: not visible) and no window: not queued."""
+    return queued_window or badge is not None
+
+
+async def _visible_text_of(client, name: str) -> str | None:
+    """The text of the visible window `name`; None when it isn't shown."""
+    try:
+        w = await ui._visible_named(client.root_window, name)
+        return None if w is None else await ui.window_text(w)
+    except Exception:
+        return None
+
+
 def cooldown_moving(first: int, second: int | None) -> bool:
     """Two reads COOLDOWN_TICK apart: a live cooldown went down."""
     return second is not None and second < first
@@ -885,6 +901,13 @@ async def team_up(quester, dungeon: str) -> str:
         if not clicked and wait is not None:
             logger.warning(f"team up: TEAM UP! still on cooldown ({wait}s): not queued")
             return "none"
+    if not clicked and not queued_signs(await _visible_text_of(client, "txtTeamUp"), queued_window=bool(
+            await _path_to_text(client.root_window, ("cancel team up!", "cancel team up"), []))):
+        # Only RESUME (our own lost copy of Morganthe's room, 04:28) and no
+        # Team Up badge at all: not a queue. Back to the sigil until TEAM UP!
+        # shows again.
+        logger.warning("team up: only RESUME on the sigil and no Waiting badge: not queued")
+        return "none"
     if not clicked:
         # The sigil shows only Resume while we're queued (after a restart the
         # Waiting badge wasn't always readable): wait for the team to take us.
