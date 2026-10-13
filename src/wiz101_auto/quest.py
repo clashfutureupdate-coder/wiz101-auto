@@ -4977,8 +4977,12 @@ class Quester:
         self._parked = parked
         if parked:
             logger.debug(f"story quests parked (no giver sought): {parked}")
-        if self._mainline:
-            self._last_main = sorted(self._mainline)[0]
+        # (A story skipped for good, another world's: 'Into the Sea' held as
+        # main kept Polaris's gap after 'Darling Clementine' unseen; no giver
+        # was asked and the bot went to side quests.)
+        live_main = sorted(n for n in (self._mainline or ()) if n not in self.setbacks.skipped)
+        if live_main:
+            self._last_main = live_main[0]
             self._last_main_zone = await self.client.zone_name() or ""
             _save_last_main(self._last_main, self._last_main_zone)
         elif complete and self._last_main_zone != "swept" and not parked:
@@ -4992,7 +4996,7 @@ class Quester:
             self._last_main_zone = "swept"
             _save_last_main(self._last_main, self._last_main_zone)
         alert_due = time.monotonic() - self._no_main_alerted > NO_MAIN_ALERT_SECONDS
-        if complete and not self._mainline and alert_due and not parked:
+        if complete and not live_main and alert_due and not parked:
             # The next main quest isn't in the book (after 'Weights and
             # Measures', 'The Last Meow' was never offered): side quests
             # meanwhile, but the player should know.
