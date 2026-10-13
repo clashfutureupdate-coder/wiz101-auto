@@ -2532,6 +2532,21 @@ class Quester:
         logger.info("marking inside the dungeon before its fight (Recall back here after a defeat)")
         await self._mark_here("fight", objective=objective, require_clear=False)
 
+    async def _dungeon_in_progress(self, zone: str) -> bool:
+        """Inside a dungeon still being done: a learned one, a team's rooms, the
+        one we went in by, or a room with other players (a team took us into
+        the Basstille, unlearned, and the bot left it for Hilda Brewer)."""
+        if "/interiors/" not in (zone or "").lower():
+            return False
+        from .teamup import in_team_run, teammates
+
+        if is_team_up_zone(zone) or in_team_run(zone) or await self._in_dungeon(zone):
+            return True
+        try:
+            return bool(await teammates(self.client, await self._position()))
+        except Exception:
+            return False
+
     async def _target_in_room(self, objective: str) -> bool:
         """An enemy the Defeat objective names is loaded in this room."""
         from .names import lang_name
@@ -9762,7 +9777,11 @@ class Quester:
         # else a potion when low (as with a team).
         from .dungeons import no_return
 
-        if heal_now and (is_team_up_zone(zone_now) or no_return(zone_now)):
+        if heal_now and (is_team_up_zone(zone_now) or no_return(zone_now)
+                         or await self._dungeon_in_progress(zone_now)):
+            # Never out of a dungeon in progress (the player's blanket rule:
+            # potions keep it going between the fights; it went for wisps, the
+            # hub and Hilda Brewer from the Basstille): the room, else a potion.
             heal_now = False
             if self.upkeep and await heal_in_room(self.client, self.upkeep):
                 return
@@ -9844,7 +9863,7 @@ class Quester:
             if not await is_free(self.client):
                 return
         pet = getattr(self, "pet", None)
-        if pet and not team and not await self._in_dungeon(zone_now):
+        if pet and not team and not await self._dungeon_in_progress(zone_now):
             self.controller.allow_idle(1800)  # the trip and up to dozens of games
             try:
                 acted = await pet.tick()
@@ -9856,7 +9875,7 @@ class Quester:
             if acted:
                 return
         shop = getattr(self, "potions", None)
-        if shop and not team and not await self._in_dungeon(zone_now) and not no_return(zone_now):
+        if shop and not team and not await self._dungeon_in_progress(zone_now) and not no_return(zone_now):
             self.controller.allow_idle(300)  # the trip to the Commons and back
             try:
                 acted = await shop.tick(team_return=getattr(self, "_team_return_since", None) is not None)
