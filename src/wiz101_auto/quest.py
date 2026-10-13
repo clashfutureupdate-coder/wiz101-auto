@@ -1145,6 +1145,12 @@ def closest_name(want: str, names, used=()) -> str | None:
     return best[2] if best else None
 
 
+def boss_room_entered_from(dungeons: dict, boss_room: str, zone: str) -> bool:
+    """The boss's room is a learned dungeon whose sigil stands in `zone`."""
+    entry = dungeons.get(boss_room)
+    return entry is not None and getattr(entry, "outside", None) == zone
+
+
 def in_known_dungeon_folder(zone: str, known) -> bool:
     """A room of a learned dungeon whose rooms share its first room's folder
     ("WizardCity/Gauntlets/WC_Triton_Gauntlet1/..."): the Waterworks' second
@@ -7626,6 +7632,11 @@ class Quester:
         boss_room = DungeonMemory.load().bosses.get(defeat_target(objective or "") or "")
         if not (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
                 and boss_room.split("/", 1)[0] == zone.split("/", 1)[0]):
+            return False
+        if boss_room_entered_from(DungeonMemory.load().dungeons, boss_room, zone):
+            # Its sigil is in this room (Archera DeathsHead's chamber off the
+            # Pale Fangs hall): the usual sigil step (Team Up there), not the
+            # hub button. It went hub <-> hall for 12 min, never queued.
             return False
         hops = self.doors.route(zone, boss_room)
         logger.debug(f"toward {boss_room}: route {[h[3] for h in hops]}")
