@@ -7228,7 +7228,14 @@ class Quester:
             near = [c for c in circles if distance(c, marker) < TEAM_CIRCLE_NEAR] or at_fight
             waited = self.__dict__.setdefault("_boss_waits", {})
             wkey = (await self.client.zone_name() or "", round(marker.x / 300), round(marker.y / 300))
-            first = waited.setdefault(wkey, time.monotonic())
+            # (Counted again after any fight: back in the Galleries 9 s after
+            # a flee, the wait from before the fight had run out, and the bot
+            # started Kravenly and the Ghost Dog alone and lost.)
+            fights = getattr(self.fighter, "fights", 0) if self.fighter else 0
+            first, seen = waited.get(wkey, (time.monotonic(), fights))
+            if seen != fights:
+                first = time.monotonic()
+            waited[wkey] = (first, fights)
             # (Only with a teammate seen lately: after a RESUME into Salicar's
             # Sanctum the team was gone, and the bot started him alone and lost.)
             mate_lately = time.monotonic() - getattr(self, "_mate_seen_at", -1e9) < TEAM_START_AFTER
