@@ -58,3 +58,11 @@ team list takes any main-quest dungeon after 5 losses).
 |---|---|---|
 | Poseidon Earth-Shaker (Storm, 20,000; Ice mastery) | Infallible round 1; a single-target trap, prism or negative charm on him, or a single hit with a side effect (Efreet's weakness, Sabertooth's shield, Dr. Von's infection): Storm attack on the caster and a trap/prism wipe. Mass prisms, Windstorm, mass traps and AoEs with effects are safe | `BOSS_BANS`: none of those on him; clean hits and hit-alls only |
 | Sand Squid Tentacles (2 × Myth boss 28,000, 2 × elite 4,200; Vesper's side quest, Sunken Ship) | any regular heal: an Earthquake from each tentacle (blade wipe); small tentacles respawn after 2 rounds while a big one lives | `BOSS_BANS`: no heals (pet heals are fine); the big ones should go first |
+
+## Polaris (the player's list, 2026-10-13)
+
+| Boss | Where | Cheats | The bot's rule |
+|---|---|---|---|
+| Baba Yaga (Myth, 20,000) | Forlorn Tayg | Shifts shape; turns 3, 6 and 10: summons powerful polymorph minions. Counter: Strangle (Death dispel) before turn 3, Dissipate (Storm) before 6, Melt (Ice) before 10. Mass Myth Prism past her Myth resist; Tower Shields, not Myth Shields (her shadow magic goes through school shields) | none yet: the wizard owns no dispels or Tower Shields (Myth Prism and Pierce only); after 2 losses, Team Up |
+| Ygor | Titan Forge | Every 5 rounds: heavy cheat Tower Shields, and a random Beguile on the team. Counter: two Strangles on him right before round 5 | none yet (no Strangle). The player: no multi-hits or small hits; stack blades/feints and one-shot him (Medusa, King Artorius) so a Beguile can't turn the bot on its teammates |
+| Rasputin / The Rat (24,000; final boss) | Borealis Peaks | A Borealis Minion for every blade or trap cast (kill it within 3 rounds with low-pip hits or wand hits, before its final tier); more than one school trap gets stolen onto the caster; -55% Tower Shields often. Team: one player kills minions; a Potent Trap feint then a regular/Mass Feint stacks traps without the swap; high pierce | `BOSS_BANS`: no blades, no traps (non-damage) while he lives |
