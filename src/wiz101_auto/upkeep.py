@@ -457,6 +457,28 @@ async def unstick(client, frozen: bool = False) -> bool:
         return False
 
 
+async def relog_would_hurt(client) -> str:
+    """Why logging out now would do harm ('' if it wouldn't): on a duel circle
+    (a fight about to start: the player saw it log out of the Basstille's
+    Warden fight, waiting for its turn), or in a room with other players (a
+    team's dungeon: logging out drops the run)."""
+    from .teamup import teammates
+
+    try:
+        me = await client.body.position()
+        from .collect import duel_circles
+        from .safe_teleport import ON_CIRCLE
+
+        if any(math.dist((me.x, me.y), c[:2]) < ON_CIRCLE for c in await duel_circles(client)):
+            return "on a duel circle"
+        zone = await client.zone_name() or ""
+        if "/interiors/" in zone.lower() and await teammates(client, me):
+            return "other players in this room"
+    except Exception:
+        return ""
+    return ""
+
+
 async def _relog_out(client) -> bool:
     """Nothing frees the wizard (a duel circle 'battle' with 0 opponents):
     log out to character select and back in. True (it acted)."""

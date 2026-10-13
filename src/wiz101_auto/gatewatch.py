@@ -67,6 +67,16 @@ async def gate_watch(client, doors, controller) -> None:
             found = None if jumped else walked_through(list(samples), zone)
             old = samples[-1][1]
             samples.clear()
+            try:
+                from .teamup import in_team_run, note_team_run
+
+                if in_team_run(old) and "/interiors/" in zone.lower():
+                    # On into the next room of a team's dungeon (the Basstille's
+                    # Cellblocks after its Processing Ward): a team room too, or
+                    # the bot played them solo, waiting for lone enemies.
+                    note_team_run(zone, new_run=False)
+            except Exception as exc:
+                logger.debug(f"team run room not noted: {exc!r}")
             if found is not None:
                 door, start = found
                 try:

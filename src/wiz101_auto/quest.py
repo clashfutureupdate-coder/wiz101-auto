@@ -1188,6 +1188,11 @@ def fight_needed(objective: str, enemy_names: list[str], zone: str, has_boss: bo
     return False
 
 
+def target_matches(target: str, names: list[str]) -> bool:
+    """`target` (normalised, no plural s) among enemy names."""
+    return len(target) >= 3 and any(target in _norm_name(n) or _norm_name(n) in target for n in names if n)
+
+
 def distance(a: XYZ, b: XYZ) -> float:
     return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
 
@@ -2463,8 +2468,29 @@ class Quester:
 
         if no_return(zone):
             return  # Recall can't come back in here: the entrance mark stays
+        if not await self._target_in_room(objective):
+            # Only at the fight itself (the player: it marked in each of the
+            # Basstille's rooms on the way to the Warden).
+            return
         logger.info("marking inside the dungeon before its fight (Recall back here after a defeat)")
         await self._mark_here("fight", objective=objective, require_clear=False)
+
+    async def _target_in_room(self, objective: str) -> bool:
+        """An enemy the Defeat objective names is loaded in this room."""
+        from .names import lang_name
+
+        wanted = [_norm_name(n).removesuffix("s") for n in defeat_names(objective)]
+        if not wanted:
+            return True  # ("Defeat 3 Pirates"-like: any fight here)
+        names = []
+        try:
+            for m in await self.client.get_mobs():
+                t = await m.object_template()
+                code = await t.display_name() if t else ""
+                names.append(await lang_name(self.client, code) if code else "")
+        except Exception:
+            return True  # can't tell: mark as before
+        return any(target_matches(w, names) for w in wanted)
 
     async def _boss_prisms(self, target: str) -> dict[str, int]:
         """Our school's prisms for a boss of our school (the player: Myth

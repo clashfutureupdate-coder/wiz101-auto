@@ -92,6 +92,15 @@ async def relog(client) -> bool:
         zone = await client.zone_name() or ""
     except Exception:
         zone = ""
+    from .upkeep import relog_would_hurt
+
+    why = await relog_would_hurt(client)
+    if why:
+        # (Logged out of the Basstille's Warden fight while waiting on the
+        # circle for its turn, and lost the team's run.)
+        logger.warning(f"not relogging: {why}; waiting instead")
+        await asyncio.sleep(5.0)
+        return True
     now = time.monotonic()
     _RELOGS[:] = [(t, z) for t, z in _RELOGS if now - t < RELOG_LOOP_WINDOW]
     if zone and relog_loop(_RELOGS, zone, now):
