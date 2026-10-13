@@ -7675,7 +7675,11 @@ class Quester:
         boss_room = memory.bosses.get(defeat_target(objective or "") or "")
         entry = memory.dungeons.get(boss_room or "")
         if (boss_room and entry is not None and zone not in (boss_room, entry.outside)
-                and is_team_up_zone(boss_room) and zone.split("/", 1)[0] == boss_room.split("/", 1)[0]):
+                and is_team_up_zone(boss_room) and zone.split("/", 1)[0] == boss_room.split("/", 1)[0]
+                and not is_team_up_zone(zone) and not await self._in_dungeon(zone)):
+            # (Not from inside the dungeon: in the Basstille's Cellblock with
+            # a team it headed back out to Iron Paw's sigil while the teammate
+            # fought.)
             # (Same world only: from Azteca's Gold Mines the gates found no way
             # and the four tries went in 15 s; the usual step crosses worlds.)
             # A team-only boss room with a learned sigil: straight to the
