@@ -86,3 +86,28 @@ def test_never_matches_the_decks_long_names():
 
     assert _named("King Artorius - Myth", {"king artorius"})
     assert not _named("Orthrus - T02 - A", {"king artorius"})
+
+
+def test_switch_only_for_a_known_different_fight():
+    from wiz101_auto.deck_keeper import should_switch
+
+    assert not should_switch("aoe", "aoe", False, 1e9)
+    assert not should_switch("aoe", None, False, 1e9)  # no fight known: the worn deck stays
+    assert should_switch(None, "aoe", False, 1e9)  # (nothing switched yet this session)
+
+
+def test_switches_hold_unless_the_boss_is_next():
+    from wiz101_auto.deck_keeper import SWITCH_HOLD_SECONDS, should_switch
+
+    assert not should_switch("single", "aoe", False, 60.0)  # back and forth between objectives
+    assert should_switch("single", "aoe", False, SWITCH_HOLD_SECONDS)
+    assert not should_switch("aoe", "single", False, 60.0)  # "Defeat <boss>" alone, walking rooms
+    assert should_switch("aoe", "single", True, 5.0)  # the boss fight about to start
+
+
+def test_with_a_team_only_the_boss_deck_and_never_mid_fight():
+    from wiz101_auto.deck_keeper import should_switch
+
+    assert should_switch("aoe", "single", True, 5.0, team=True)
+    assert not should_switch("aoe", "single", True, 5.0, team=True, mate_fighting=True)
+    assert not should_switch("single", "aoe", False, 1e9, team=True)

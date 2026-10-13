@@ -25,7 +25,6 @@ from .gear import NEXT_PAGE, PAGE, GearManager
 DECK_PAGE = ["WorldView", "DeckConfiguration", "DeckConfigurationWindow", "ControlSprite", "DeckPage"]
 ITEMS_FILE = Path("state") / "deck_items.json"  # {"aoe": name, "single": name, "tab": window name}
 BUTTONS = [*PAGE, "ButtonLayout"]
-DECK_SLOTS = 8  # decks the arrows go through before giving up
 # Item cards (gear and pet spells in a deck) the player keeps crossed out:
 # template-name prefixes. The wand's 0-pip Minor Fire Scorch.
 CROSS_OUT = ("Wand-Fire",)
@@ -141,41 +140,6 @@ class DeckItems:
     async def list_decks(self, tab: str) -> list[tuple[str, bool]]:
         return await self.gear._scan_tab(tab)
 
-    async def equip_on_deck_page(self, name: str) -> bool:
-        """The fast way (the player's): the spellbook's deck page, its arrows
-        to the deck named `name`, Equip, close. True if it's worn after."""
-        from .deck import close_spellbook, open_spellbook
-
-        def norm(t: str) -> str:
-            return "".join(c for c in ui._TAGS.sub("", t or "").lower() if c.isalnum())
-
-        await open_spellbook(self.client)
-        try:
-            want = norm(name)
-            for _ in range(DECK_SLOTS):
-                shown = norm(await ui.text_at(self.client, [*DECK_PAGE, "DeckName"]))
-                # (The page cuts long names short; but at least 12 letters of
-                # it: a short or empty read matched the worn deck, and Equip
-                # on it took it off: no deck at all.)
-                if shown and (shown == want or (len(shown) >= 12 and want.startswith(shown))):
-                    break
-                if not await ui.click(self.client, [*DECK_PAGE, "NextDeck"]):
-                    return False
-                await asyncio.sleep(0.4)
-            else:
-                return False
-            if await ui.is_visible(self.client, [*DECK_PAGE, "equipFist"]):
-                return True  # worn already
-            await ui.click(self.client, [*DECK_PAGE, "EquipButton"])
-            await asyncio.sleep(0.8)
-            box = await ui.modal_box(self.client)
-            if box is not None and "copy" in (await ui.modal_text(box)).lower():
-                await ui.modal_click(self.client, box, "rightButton")  # no: each deck has its cards
-                await asyncio.sleep(0.6)
-            return await ui.is_visible(self.client, [*DECK_PAGE, "equipFist"])
-        finally:
-            await close_spellbook(self.client)
-
     async def cross_out_item_cards(self) -> int:
         """In the worn deck, cross out the item cards the player keeps out of
         it (CROSS_OUT: the wand's 0-pip Minor Fire Scorch). A quest that took
@@ -222,28 +186,36 @@ class DeckItems:
             logger.debug(f"decks: item card check failed: {exc!r}")
 
     async def equip(self, role: str) -> bool:
-        """Put on the deck item for `role` ('aoe' or 'single'). True if worn after."""
+        """Put on the deck item for `role` ('aoe' or 'single') and the amulet
+        that goes with it (deck_items.json "amulets": {"aoe": "shango",
+        "single": "feint"}, part of each name: Shango's Mythblade amulet for
+        questing, the Jewel of the Feint for bosses), in one backpack open.
+        True if the deck is worn after.
+
+        (Straight to the backpack's deck tab: the spellbook's deck page went
+        through every deck with its arrows, then failed and the backpack
+        opened anyway, and the amulet opened it a second time: 25-30 s a
+        switch.)"""
         d = load()
         name, tab = d.get(role), d.get("tab")
         if not name or not tab:
             return False
-        try:
-            if await self.equip_on_deck_page(name):
-                logger.info(f"decks: wearing {name!r} ({role} deck)")
-                _note_cards(role)
-                await self._cross_out(name)
-                return True
-        except Exception as exc:
-            logger.debug(f"decks: deck page switch failed: {exc!r}")
-        logger.info("decks: the deck page didn't do it; through the backpack")
+        amulet = (d.get("amulets") or {}).get(role)
         if not await self.gear._open():
             logger.warning("decks: the backpack didn't open")
             return False
+        worn_amulet = None
         try:
             ok = await self._put_on(tab, name)
+            if ok and amulet:
+                atab = await self.amulet_tab()
+                worn_amulet = bool(atab) and await self._put_on(atab, amulet)
         finally:
             await self.gear._close()
         logger.info(f"decks: {'wearing' if ok else 'could not put on'} {name!r} ({role} deck)")
+        if worn_amulet is not None:
+            said = "wearing" if worn_amulet else "could not put on"
+            logger.info(f"decks: {said} the amulet {amulet!r} ({role})")
         if ok:
             _note_cards(role)
             await self._cross_out(name)
@@ -287,24 +259,6 @@ class DeckItems:
         except Exception:
             return None
         return None
-
-    async def equip_amulet(self, role: str) -> bool | None:
-        """The amulet that goes with this deck (deck_items.json "amulets":
-        {"aoe": "shango", "single": "feint"}, part of each name): the player's
-        Shango's Mythblade amulet for questing, the Jewel of the Feint for
-        bosses. True if worn after, None with none set for the role."""
-        want = (load().get("amulets") or {}).get(role)
-        if not want:
-            return None
-        if not await self.gear._open():
-            return False
-        try:
-            tab = await self.amulet_tab()
-            ok = bool(tab) and await self._put_on(tab, want)
-        finally:
-            await self.gear._close()
-        logger.info(f"decks: {'wearing' if ok else 'could not put on'} the amulet {want!r} ({role})")
-        return ok
 
     async def _put_on(self, tab: str, name: str) -> bool:
         """Equip the deck item `name`; an empty deck asks to copy the old

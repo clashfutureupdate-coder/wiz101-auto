@@ -99,6 +99,7 @@ TRAVEL_AND_FIGHT_MARKS = False
 DEFEAT_NO_MARK_SECONDS = 120.0  # right after a defeat the wizard stands in the hub: no heal marks
 NPC_INCH_RANGE = 1500.0  # a refused teleport this close to an NPC: step closer; farther off, it's a door
 EXPOSED_RADIUS = 1200.0  # standing still (menus, marking) this close to an enemy invites a fight
+BOSS_NEAR = 3000.0  # outdoors, a boss this near is the next fight: the boss deck goes on
 BOUNCE_DISTANCE = 20.0
 WISP_SCAN_SECONDS = 30.0
 STATUS_EVERY_SECONDS = 20.0
@@ -2563,6 +2564,28 @@ class Quester:
         except Exception:
             return True  # can't tell: mark as before
         return any(target_matches(w, names) for w in wanted)
+
+    async def _boss_close(self, objective: str, here: str) -> bool:
+        """The Defeat objective's enemy is about to be fought: loaded in this
+        room (a dungeon or interior), or outdoors within BOSS_NEAR of us."""
+        from .names import lang_name
+
+        wanted = [_norm_name(n).removesuffix("s") for n in defeat_names(objective)]
+        if not wanted:
+            return False
+        inside = "/interiors/" in here.lower() or await self._in_any_dungeon(here)
+        try:
+            me = await self._position()
+            for m in await self.client.get_mobs():
+                t = await m.object_template()
+                code = await t.display_name() if t else ""
+                name = await lang_name(self.client, code) if code else ""
+                if any(target_matches(w, [name]) for w in wanted) and (
+                        inside or distance(await m.location(), me) < BOSS_NEAR):
+                    return True
+        except Exception:
+            return False
+        return False
 
     async def _boss_prisms(self, target: str) -> dict[str, int]:
         """Our school's prisms for a boss of our school (the player: Myth
@@ -9908,18 +9931,21 @@ class Quester:
             finally:
                 self.controller.end_idle()
         keeper = getattr(self, "deck_keeper", None)
-        if keeper is not None and not team and await is_free(self.client):
+        if keeper is not None and await is_free(self.client):
             self.controller.allow_idle(120)  # deck clicks look like "nothing happening"
             try:
                 here = await self.client.zone_name() or ""
-                # The boss deck (deck_general.json 'boss_deck', the player's
-                # heavier deck) in a dungeon or room, or with a boss fight next.
-                # Only a fight decides (talking in the Northguard throne room,
-                # an interior, swapped the deck items every few seconds):
-                # otherwise the deck worn stays.
+                # The boss deck (the player's heavier deck item, with the Feint
+                # amulet) only with the boss fight about to start: in its room,
+                # or the boss right there. A "Defeat <boss>" objective alone
+                # isn't enough (the player: it changed deck with every objective,
+                # walking through rooms, 25-30 s each). No fight known: the
+                # deck worn stays (boss None).
                 bosses = DungeonMemory.load().bosses
                 obj = await self.objective() or ""
-                extra: dict[str, int] = {}
+                extra: dict[str, int] | None = None
+                boss: bool | None = None
+                boss_now = False
                 if is_combat_objective(obj):
                     target = defeat_target(obj) or ""
                     # A boss by name (known bosses, the fights logged); a place
@@ -9929,32 +9955,40 @@ class Quester:
                     # and never a counted one ("(0 of 3)": regular enemies).
                     known = bool(target and is_known_enemy(target))
                     counted = bool(re.search(r"\(\d+ of \d+\)", obj))
-                    boss = (any(bosses.get(n) for n in defeat_names(obj))
-                            or bool(target and is_known_boss(target))
-                            or (not known and not counted
-                                and (await self._in_any_dungeon(here) or "/interiors/" in here.lower())
-                                # (Two of it around: a regular enemy. The boss deck
-                                # went on for Thunder Horn Zombies in the Black Sun
-                                # Pyramid and stayed on for the room's other fights.)
-                                and await self._count_named(target) < 2))
-                    if target and boss:
-                        extra = await self._boss_prisms(target)
+                    likely = (any(bosses.get(n) for n in defeat_names(obj))
+                              or bool(target and is_known_boss(target))
+                              or (not known and not counted
+                                  and (await self._in_any_dungeon(here) or "/interiors/" in here.lower())
+                                  # (Two of it around: a regular enemy. The boss deck
+                                  # went on for Thunder Horn Zombies in the Black Sun
+                                  # Pyramid and stayed on for the room's other fights.)
+                                  and await self._count_named(target) < 2))
+                    if target and likely:
+                        boss_now = (any(bosses.get(n) == here for n in defeat_names(obj))
+                                    or await self._boss_close(obj, here))
+                        if boss_now:
+                            boss, extra = True, await self._boss_prisms(target)
                     elif target:
-                        extra = await self._group_prism(target)
+                        boss, extra = False, await self._group_prism(target)
+                    else:
+                        boss, extra = False, {}
                 else:
-                    boss = getattr(keeper, "last_boss", False)
-                    if boss and self.fighter is not None and not getattr(self.fighter, "last_had_boss", True):
-                        boss = False  # (the last fight had no boss: the everyday deck again)
-                    # A known boss of this dungeon not beaten yet ('Explore Black
-                    # Sun Chamber' walks into Belloq: the everyday deck went in
-                    # after the room's regular fights, and ran dry against him).
+                    # A known boss of this dungeon not beaten yet, in its room
+                    # ('Explore Black Sun Chamber' walks into Belloq: the
+                    # everyday deck went in after the room's regular fights, and
+                    # ran dry against him).
                     ahead = self._boss_ahead_in_dungeon(here, bosses)
-                    if ahead and await self._in_any_dungeon(here):
-                        boss = True
-                        extra = await self._boss_prisms(ahead)
-                # (No prisms asked for once the boss fight is over: they come out.)
-                if await keeper.tick(self.client, boss=boss, extra=extra):
-                    return
+                    if ahead and bosses.get(ahead) == here:
+                        boss, boss_now, extra = True, True, await self._boss_prisms(ahead)
+                # With a team: only the boss deck right before the boss, never
+                # while a teammate fights (clicking the backpack kept us out
+                # of their fight).
+                if not team or boss_now:
+                    mate_fighting = team and await self._team_fight_now()
+                    # (No prisms asked for once the boss fight is over: they come out.)
+                    if await keeper.tick(self.client, boss=boss, extra=extra, boss_now=boss_now,
+                                         team=team, mate_fighting=mate_fighting):
+                        return
             except Exception as exc:
                 logger.opt(exception=exc).warning("deck keeping failed")
             finally:

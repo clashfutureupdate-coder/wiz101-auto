@@ -107,6 +107,26 @@ def item_role(boss: bool) -> str:
     return "single" if boss else "aoe"
 
 
+SWITCH_HOLD_SECONDS = 600.0  # deck items: at most one switch this often, a boss fight about to start aside
+
+
+def should_switch(worn: str | None, want: str | None, boss_now: bool, since_switch: float,
+                  team: bool = False, mate_fighting: bool = False) -> bool:
+    """Whether to put on the deck item `want` now (worn: the role on, None
+    if not known). The player: the deck changed with every objective, before
+    the next fight was even known (25-30 s each, walking through rooms). Only
+    a known fight decides, and a switch holds SWITCH_HOLD_SECONDS, except the
+    boss deck with the boss fight about to start. With a team, only that, and
+    never while a teammate fights (the switch kept us out of their fight)."""
+    if not want or want == worn:
+        return False
+    if team and (mate_fighting or not (boss_now and want == "single")):
+        return False
+    if boss_now and want == "single":
+        return True
+    return since_switch >= SWITCH_HOLD_SECONDS
+
+
 def deck_changes(current: dict[str, int], target: dict[str, int]) -> dict[str, tuple[int, int]]:
     """{card: (now, wanted)} for every card whose count differs (the player's
     own cards like Reshuffle aside)."""
@@ -152,8 +172,8 @@ class DeckKeeper:
         self._tries: dict[str, int] = {}
         self._boss = False  # the boss deck was the one asked for last
         self._extra: dict[str, int] = {}  # cards asked for on top (a boss's prisms)
-        self.last_boss = False
         self._worn: str | None = None  # deck item role worn ("aoe" everyday, "single" boss)
+        self._switched_at = -1e9  # the last deck item switch (monotonic)
         self._wear_failed_at = -1e9
         # Extras put in the player's deck, to take out again: on disk, since a
         # restart forgot them and a myth boss's Myth Prisms stayed in for the
@@ -279,22 +299,26 @@ class DeckKeeper:
         logger.info(f"deck: re-read the spellbook ({len(names)} cards, {len(known)} spells known)")
         return True
 
-    async def _wear(self, client, boss: bool) -> bool | None:
-        """Deck items: the one for this deck on (then its cards re-read).
-        True if it switched, False if it failed, None if worn already or no
-        deck items."""
+    async def _wear(self, client, boss: bool, boss_now: bool = False,
+                    team: bool = False, mate_fighting: bool = False) -> bool | None:
+        """Deck items: the one for this deck on, with its amulet in the same
+        backpack open (then its cards re-read). True if it switched, False if
+        it failed, None if not now (worn already, held, or no deck items)."""
         from . import deckitems
 
         if not deckitems.ready():
             return None
         role = item_role(boss)
-        if self._worn == role or time.monotonic() - self._wear_failed_at < WEAR_RETRY_SECONDS:
+        if time.monotonic() - self._wear_failed_at < WEAR_RETRY_SECONDS:
+            return None
+        if not should_switch(self._worn, role, boss_now, time.monotonic() - self._switched_at,
+                             team, mate_fighting):
             return None
         from .upkeep import move_to_safety
 
         logger.info(f"deck: to the {'boss' if boss else 'everyday'} deck item ({deckitems.load().get(role)})")
         await move_to_safety(client, 1500.0, "before changing the deck")
-        try:
+        try:  # (the amulet too: Shango's for questing, the Feint jewel for bosses)
             ok = await deckitems.DeckItems(client).equip(role)
         except Exception as exc:
             logger.warning(f"deck: couldn't put the deck item on ({exc!r})")
@@ -304,22 +328,26 @@ class DeckKeeper:
             self._wear_failed_at = time.monotonic()
             return False
         self._worn = role
-        try:  # (the amulet too: Shango's for questing, the Feint jewel for bosses)
-            await deckitems.DeckItems(client).equip_amulet(role)
-        except Exception as exc:
-            logger.warning(f"deck: couldn't put the amulet on ({exc!r})")
+        self._switched_at = time.monotonic()
         await self.refresh(client)  # (its own cards: filled once, then just worn)
         return True
 
-    async def tick(self, client, boss: bool = False, extra: dict[str, int] | None = None) -> bool:
+    async def tick(self, client, boss: bool | None = None, extra: dict[str, int] | None = None,
+                   boss_now: bool = False, team: bool = False, mate_fighting: bool = False) -> bool:
         """Between steps: put the deck back if it differs (with `extra` on
-        top: a boss's prisms, out again once they're not asked for). True if
-        it did."""
-        self.last_boss = boss  # (the deck asked for: kept while no fight decides)
+        top: a boss's prisms, out again once they're not asked for). `boss`
+        None: no fight known, so the deck worn and the extras asked for stay.
+        With a team, only a deck item switch (no card rebuilds). True if it
+        did something."""
+        if boss is None:
+            boss = self._worn == "single" if self._worn else self._boss
+            extra = self._extra
+        elif await self._wear(client, boss, boss_now, team, mate_fighting):
+            return True
+        if team:
+            return False
         if STALE_FILE.exists():
             return await self.refresh(client)
-        if await self._wear(client, boss):
-            return True
         due = self.due(boss, extra)
         if due is None:
             return False
