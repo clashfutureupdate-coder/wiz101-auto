@@ -3352,6 +3352,13 @@ class Quester:
             # The boss's own room too (Deep Spawn's BeastTopside_03: not
             # named like BeastControl, it stayed solo after the queue).
             add_team_dungeon(room, quest)
+        target = defeat_target(objective)
+        if target and "/interiors/" in room.lower() and target not in memory.bosses:
+            # The objective's name for who beat us ("Morganthe's Guards":
+            # Kravenly and the Ghost Dog) placed in their room, so the way to
+            # it is the sigil and the queue (it wandered Kondha Desert's duel
+            # circles for 8 min and set 'Shadow Palace' aside).
+            memory.record_boss(target, room)
         logger.warning(f"lost {objective!r} {losses} times: {dungeon.split('/')[-1]} with a team from now on "
                        f"(Team Up at its sigil) until {quest!r} is done")
         self._alert_main_stuck(quest, f"lost {objective!r} {losses} times; waiting for a team")
