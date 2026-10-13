@@ -2829,6 +2829,14 @@ class Quester:
             # Already there, or inside a dungeon (a Recall out resets it: it
             # left Counterweight East right after its last lever).
             return False
+        if "/interiors/" in (zone or "").lower():
+            from .teamup import teammates
+
+            if await teammates(self.client, await self._position()):
+                # Other players in this room: a team's dungeon the bot doesn't
+                # know (restarted in the Basstille's Processing Ward, it
+                # recalled out to the entrance mark, away from its teammate).
+                return False
         if dest and (self.doors.leading_to(dest, zone) or DungeonMemory.load().bosses.get(
                 defeat_target(objective) or "") == zone):
             # In a room entered from the objective's place (the Spirit World
