@@ -7854,6 +7854,14 @@ class Quester:
         if not (boss_room and zone and "/interiors/" in zone.lower() and boss_room != zone
                 and boss_room.split("/", 1)[0] == zone.split("/", 1)[0]):
             return False
+        from .teamup import in_team_run, teammates
+
+        if (in_team_run(zone) or in_team_run(boss_room)
+                or await teammates(self.client, await self._position())):
+            # A room of a team's dungeon, or players here: never out by the hub
+            # button (in the Basstille's Cellblock A, Iron Paw "in the
+            # Processing Ward, no known way": it left the run before a fight).
+            return False
         if boss_room_entered_from(DungeonMemory.load().dungeons, boss_room, zone):
             # Its sigil is in this room (Archera DeathsHead's chamber off the
             # Pale Fangs hall): the usual sigil step (Team Up there), not the
