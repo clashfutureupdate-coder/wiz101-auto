@@ -681,9 +681,10 @@ COOLDOWN_TICK = 2.5  # seconds between two reads of the cooldown text
 
 def queued_signs(badge: str | None, queued_window: bool) -> bool:
     """Anything on screen that says we're queued: the Waiting window, or the
-    Team Up badge shown at all (its text isn't always readable while queued).
-    No badge (None: not visible) and no window: not queued."""
-    return queued_window or badge is not None
+    Team Up badge reading "Waiting". (The badge window is found even while
+    hidden: at Inspector Clooso's sigil, RESUME only and no badge on screen,
+    it still counted as queued.)"""
+    return queued_window or "wait" in (badge or "").lower()
 
 
 async def _visible_text_of(client, name: str) -> str | None:

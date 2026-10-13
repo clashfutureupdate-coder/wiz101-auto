@@ -4,7 +4,8 @@ from wiz101_auto.teamup import cooldown_moving, cooldown_seconds, queued_signs
 def test_resume_only_is_not_a_queue():
     assert not queued_signs(None, queued_window=False)  # only RESUME on the sigil
     assert queued_signs("Waiting", queued_window=False)
-    assert queued_signs("", queued_window=False)  # the badge shown, text unread
+    assert not queued_signs("", queued_window=False)  # a hidden badge window
+    assert not queued_signs("Team Up!", queued_window=False)
     assert queued_signs(None, queued_window=True)
 
 
