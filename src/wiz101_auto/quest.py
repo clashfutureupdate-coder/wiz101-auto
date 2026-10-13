@@ -1189,6 +1189,13 @@ def fight_needed(objective: str, enemy_names: list[str], zone: str, has_boss: bo
     return False
 
 
+def _dungeon_folder(zone: str) -> str:
+    """A dungeon's rooms share a zone-code prefix: Polaris/Interiors/Z01_I07_CellblockA and
+    Z01_I10_ProcessingWard -> 'polaris/interiors/z01'."""
+    head, _, room = (zone or "").lower().rpartition("/")
+    return f"{head}/{room.split('_', 1)[0]}" if "_" in room else ""
+
+
 def target_matches(target: str, names: list[str]) -> bool:
     """`target` (normalised, no plural s) among enemy names."""
     return len(target) >= 3 and any(target in _norm_name(n) or _norm_name(n) in target for n in names if n)
@@ -7894,7 +7901,8 @@ class Quester:
             return False
         from .teamup import in_team_run, teammates
 
-        if (in_team_run(zone) or in_team_run(boss_room)
+        if (in_team_run(zone) or in_team_run(boss_room) or await self._dungeon_in_progress(zone)
+                or "/interiors/" in boss_room.lower() and _dungeon_folder(zone) == _dungeon_folder(boss_room)
                 or await teammates(self.client, await self._position())):
             # A room of a team's dungeon, or players here: never out by the hub
             # button (in the Basstille's Cellblock A, Iron Paw "in the
