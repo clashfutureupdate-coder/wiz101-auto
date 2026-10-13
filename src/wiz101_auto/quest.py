@@ -1668,10 +1668,10 @@ class Quester:
         # Walk in short steps and stop the moment the zone changes: one long
         # key press kept walking on the far side of the door, straight into the
         # Desert Golems at the Palace of Fire's entrance.
-        from .smoothwalk import yaw_to
+        from .smoothwalk import STUCK_TRIES, strafe_while_walking, yaw_to
 
         await self.client.body.write_yaw(yaw_to(pos, beyond))
-        last = pos
+        last, blocked = pos, 0
         for _ in range(WALK_MAX_STEPS):
             await self.client.send_key(Keycode.W, WALK_STEP_SECONDS)
             if await self.client.zone_name() != zone or await self.client.is_loading():
@@ -1683,8 +1683,18 @@ class Quester:
                 # Someone standing by the door (Marla Stinger at the Death
                 # school): not what we're walking to; keep going.
             now = await self._position()
-            if distance(now, beyond) < 60 or distance(now, last) < 5:
-                break  # there, or blocked by a wall
+            if distance(now, beyond) < 60:
+                break  # there
+            if distance(now, last) < 5:
+                # Blocked: strafe while walking on (left, then right), then
+                # re-aim at the door; give up after a few (the caller tries
+                # other sides, then teleports).
+                blocked += 1
+                if blocked > STUCK_TRIES:
+                    break
+                await strafe_while_walking(self.client, blocked)
+                await self.client.body.write_yaw(yaw_to(await self._position(), beyond))
+                now = await self._position()
             last = now
         if await self._zone_changed(zone):
             if zone:

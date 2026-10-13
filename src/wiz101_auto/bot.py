@@ -185,6 +185,9 @@ async def connect(handler: ClientHandler):
     from .safe_teleport import install
 
     install(client)  # every teleport lands clear of enemies (unless meant to start a fight)
+    from .smoothwalk import install_goto
+
+    install_goto(client)  # goto strafes off walls and teleports when stuck
     return client
 
 

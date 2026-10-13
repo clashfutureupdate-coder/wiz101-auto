@@ -26,9 +26,10 @@ TICK = 0.05  # seconds between steering updates
 LOOKAHEAD = 140.0  # steer toward the path point this far ahead (250 cut corners into walls)
 ARRIVE = 120.0  # this close to the last point: there
 MAX_TURN = math.radians(25)  # most the facing turns per tick (a quick mouse turn, not a snap)
-STUCK_SECONDS = 1.5  # no progress this long: stuck
-STUCK_MOVE = 40.0  # less than this moved in STUCK_SECONDS counts as no progress
-STUCK_TRIES = 3  # side-steps before giving up (the caller teleports)
+STUCK_SECONDS = 0.6  # no progress this long: stuck (1.5 s, and the player watched it walk into a corner)
+STUCK_MOVE = 30.0  # less than this moved in STUCK_SECONDS counts as no progress
+STUCK_TRIES = 4  # strafes before giving up (the caller teleports)
+STRAFE_SECONDS = 0.5  # a strafe held together with forward, round what we're caught on
 WIZARD_SPEED = 580.0  # units a second at no speed bonus (WizWalker's constant)
 FALL_DROP = 400.0  # a drop this big below the last ground: fell off a ledge (Ravenscar's cliff)
 
@@ -149,16 +150,99 @@ async def walk_route(client, path: list[XYZ], zone: str | None = None, arrive: f
                 if stuck_tries > STUCK_TRIES:
                     logger.debug(f"smoothwalk: stuck at ({pos.x:.0f}, {pos.y:.0f}); giving up")
                     return "stuck"
-                # A side-step round whatever we're caught on, then on.
-                side = Keycode.A if stuck_tries % 2 else Keycode.D
-                await w.release()
-                await client.send_key(side, 0.35)
-                w.press()
+                # Strafe while still walking forward (the player: left, then
+                # right), round whatever we're caught on, then on.
+                await strafe(client, stuck_tries)
                 last_pos, last_move = await body.position(), time.monotonic()
             await asyncio.sleep(TICK)
         return "timeout"
     finally:
         await w.release()
+
+
+def strafe_key(tries: int) -> Keycode:
+    """Left first, then right, alternating."""
+    return Keycode.A if tries % 2 else Keycode.D
+
+
+def stalled(moved: float, seconds: float) -> bool:
+    """Walking but barely moving for STUCK_SECONDS: caught on a wall or corner."""
+    return seconds > STUCK_SECONDS and moved < STUCK_MOVE
+
+
+async def strafe(client, tries: int):
+    """Hold a strafe key alongside forward (W stays held by the caller) for a moment."""
+    side = _HeldKey(client.window_handle, strafe_key(tries))
+    try:
+        side.press()
+        await asyncio.sleep(STRAFE_SECONDS)
+    finally:
+        await side.release()
+
+
+async def strafe_while_walking(client, tries: int):
+    """Forward and a strafe together for STRAFE_SECONDS (for step-walkers that
+    don't hold W themselves)."""
+    w = _HeldKey(client.window_handle)
+    try:
+        w.press()
+        await strafe(client, tries)
+    finally:
+        await w.release()
+
+
+async def walk_straight(client, target: XYZ, seconds: float, zone: str | None = None, stop=None) -> str:
+    """Walk at `target` (re-aiming each tick) for up to `seconds`; strafe off
+    walls and corners at once. "arrived", "zone", "stopped" (`stop()` said
+    so), "stuck" or "timeout"."""
+    body = client.body
+    w = _HeldKey(client.window_handle)
+    end = time.monotonic() + seconds
+    last_pos, last_move, tries = await body.position(), time.monotonic(), 0
+    try:
+        w.press()
+        while time.monotonic() < end:
+            if zone is not None and await client.zone_name() != zone:
+                return "zone"
+            if stop is not None and await stop():
+                return "stopped"
+            pos = await body.position()
+            if math.dist((pos.x, pos.y), (target.x, target.y)) < 40:
+                return "arrived"
+            await body.write_yaw(yaw_to(pos, target))
+            moved = math.dist((pos.x, pos.y), (last_pos.x, last_pos.y))
+            if moved >= STUCK_MOVE:
+                last_pos, last_move = pos, time.monotonic()
+            elif stalled(moved, time.monotonic() - last_move):
+                tries += 1
+                if tries > STUCK_TRIES:
+                    return "stuck"
+                logger.debug(f"walk: stuck at ({pos.x:.0f}, {pos.y:.0f}); strafing {strafe_key(tries).name}")
+                await strafe(client, tries)
+                last_pos, last_move = await body.position(), time.monotonic()
+            await asyncio.sleep(TICK)
+        return "timeout"
+    finally:
+        await w.release()
+
+
+def install_goto(client):
+    """WizWalker's goto held W for distance/speed seconds, blind: into a corner
+    of the Basstille it walked until the time ran out. Ours re-aims, strafes
+    off walls at once, and teleports to the spot when strafing doesn't help."""
+    async def goto(x: float, y: float):
+        here = await client.body.position()
+        target = XYZ(x, y, here.z)
+        try:
+            bonus = (await client.client_object.speed_multiplier()) / 100 + 1
+        except Exception:
+            bonus = 1.0
+        seconds = math.dist((here.x, here.y), (x, y)) / (WIZARD_SPEED * bonus) * 1.5 + 1
+        if await walk_straight(client, target, seconds) == "stuck":
+            logger.debug(f"walk: still stuck after strafing; teleporting to ({x:.0f}, {y:.0f})")
+            await client.teleport(target)
+
+    client.goto = goto
 
 
 async def walk_to(client, dest: XYZ, zone: str | None = None, abort=None) -> bool:
