@@ -1071,3 +1071,55 @@ def test_feint_before_blade_with_a_team():
     team.allies.append(mate)
     assert brain._best_setup([blade], [feint], "myth") is blade
     assert brain._best_setup([blade], [feint], "myth", team=True) is feint
+
+
+def _snowbeard_round_10():
+    """Snowbeard, 2026-10-13 15:24 (round 10): 8785 of 11800 left, two
+    blades on us and two Feints on him, 0+3P, the deck empty; in hand
+    Humongofrog (castable), a third Feint (the necklace's) and Orthrus (7
+    pips: not castable). The stacked frog did ~6491 and left him on 2294."""
+    from wiz101_auto.combat.model import Card, Effect, EffectKind, Target
+
+    frog = _myth(0, "Humongofrog", 1240, 4)
+    orthrus = _myth(1, "Orthrus", 1300, 7, aoe=True, castable=False)
+    feint = Card(2, "Feint", pip_cost=1, school="death", template_id=30,
+                 effects=[Effect(EffectKind.TRAP, Target.ENEMY_SINGLE, 70)])
+    my = me(998, 3947)
+    my.school = "myth"
+    my.blade_count = 2
+    my.outgoing_effects = [("mythblade", "myth", 0.35), ("spiritblade", "", 0.35)]
+    boss = enemy("Snowbeard", 8785, boss=True)
+    boss.max_health = 11800
+    boss.trap_count = 2
+    boss.incoming_effects = [("spell:2121739343", "", 0.7), ("spell:90582150", "", 0.7)]
+    b = battle([frog, orthrus, feint], [boss], my=my)
+    b.pips, b.power_pips, b.round = 0, 3, 10
+    b.upcoming, b.deck_known = [], True
+    return b, frog, feint, boss
+
+
+def test_stacks_are_kept_for_the_hit_that_kills_the_boss():
+    import unittest.mock as um
+
+    b, frog, feint, boss = _snowbeard_round_10()
+    assert brain.hit_damage(frog, b.me, boss) < boss.health  # the frog alone: not a kill
+    with um.patch.object(brain, "incoming_per_round", return_value=513.0):  # (unknown boss: 13% of 3947)
+        a = brain.decide(b, discards_left=0)
+        assert a.kind is ActionKind.CAST and a.card is feint, a.reason
+        # Next round, the third Feint on him and 0+2P: the frog kills.
+        boss.incoming_effects = [*boss.incoming_effects, ("feint:30", "", 0.7)]
+        boss.trap_count = 3
+        b.cards = [frog, b.cards[1]]
+        b.pips, b.power_pips, b.round = 1, 2, 11
+        a = brain.decide(b, discards_left=0)
+        assert a.kind is ActionKind.CAST and a.card is frog, a.reason
+        assert brain.hit_damage(frog, b.me, boss) >= boss.health
+
+
+def test_a_non_lethal_hit_still_goes_when_holding_is_no_faster():
+    import unittest.mock as um
+
+    b, frog, feint, boss = _snowbeard_round_10()
+    b.cards = [frog, b.cards[1]]  # no Feint left to add: holding only waits for Orthrus's pips
+    with um.patch.object(brain, "incoming_per_round", return_value=513.0):
+        assert not brain._stacks_kept_for_the_kill(b, frog, boss)

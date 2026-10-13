@@ -2094,8 +2094,37 @@ def _hit_when_set_up(battle: Battle, action: Action) -> Action | None:
     best = max(hits, key=worth)
     if _traps_make_the_kill(battle, best, focus):
         return None  # (the traps in hand first: then one hit kills the boss too)
+    if _stacks_kept_for_the_kill(battle, best, focus):
+        return None  # (the setup line ends it sooner: the stacks wait for the hit that kills)
     return Action(ActionKind.CAST, best, None if best.is_aoe else focus,
                   reason=f"set up ({battle.me.blade_count} blades, {focus.trap_count} traps): hitting now")
+
+
+def _stacks_kept_for_the_kill(battle: Battle, hit: Card, focus: Combatant) -> bool:
+    """Firing `hit` now would spend the blades and traps without killing
+    `focus`, and the kill search (the cards in hand, the deck's draws, a pip
+    a round) ends the fight no later by holding them: another trap or the
+    pips first, then the hit that kills. Snowbeard, 2026-10-13 15:24: 8785
+    left, two blades and two Feints up, a third Feint in hand; "no time to
+    set up" (998 health, ~2 rounds of his hits) fired Humongofrog for ~6491,
+    which left him on 2294 with the deck empty and only an unaffordable
+    Orthrus to finish him: three rounds of passing and the wizard died. A
+    hit that doesn't kill doesn't shorten the fight, so it saves no rounds
+    of his damage either: the line with fewer rounds to the kill is the one
+    that exposes us least (the same at Bullhemoth's 1,204)."""
+    if hit_damage(hit, battle.me, focus) >= focus.health:
+        return False
+    draws = sorted(battle.upcoming, key=lambda c: -c.base_damage())
+    hold = _kill_search(battle, focus, PLAN_ROUNDS, draws)
+    if hold is None:
+        return False  # (no kill either way: chip at him as before)
+    first = hold[2]
+    if first.kind is ActionKind.CAST and first.card is hit:
+        return False  # (the fastest line starts with this hit anyway)
+    fire = _kill_search(battle, focus, PLAN_ROUNDS, draws, force=hit.index)
+    # Ties go to holding: one big hit is fewer chances to fizzle or be
+    # blocked than a chip and a second hit that must come.
+    return fire is None or hold[0] <= fire[0]
 
 
 def _free_setup(battle: Battle, strat: Strategy) -> Action | None:
