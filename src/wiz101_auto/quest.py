@@ -2219,10 +2219,18 @@ class Quester:
     def _dungeon_at(self, outside: str, sigil: XYZ) -> str | None:
         """The dungeon (its first room's zone) whose sigil this is, if learned;
         else a sigil put on the team list while unlearned ("zone@x,y")."""
-        for inside, entry in DungeonMemory.load().dungeons.items():
+        dungeons = DungeonMemory.load().dungeons
+        for inside, entry in dungeons.items():
             if entry.outside == outside and distance(XYZ(*entry.sigil), sigil) < SIGIL_NEAR_RANGE:
                 return inside
         from .teamup import team_list
+
+        here = [inside for inside, entry in dungeons.items() if entry.outside == outside]
+        if len(here) == 1 and here[0] in team_list():
+            # The only dungeon entered from this zone, and it's team-only: its
+            # sigil learned at another spot (Icefall Passage's Sunless Shrine:
+            # entered alone, "alone for 64s", out, and in again, over and over).
+            return here[0]
 
         for key in team_list():
             place, _, xy = key.partition("@")
