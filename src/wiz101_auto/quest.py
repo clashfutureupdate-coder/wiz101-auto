@@ -7663,7 +7663,9 @@ class Quester:
         boss_room = memory.bosses.get(defeat_target(objective or "") or "")
         entry = memory.dungeons.get(boss_room or "")
         if (boss_room and entry is not None and zone not in (boss_room, entry.outside)
-                and is_team_up_zone(boss_room)):
+                and is_team_up_zone(boss_room) and zone.split("/", 1)[0] == boss_room.split("/", 1)[0]):
+            # (Same world only: from Azteca's Gold Mines the gates found no way
+            # and the four tries went in 15 s; the usual step crosses worlds.)
             # A team-only boss room with a learned sigil: straight to the
             # sigil's zone by the known gates and doors (the Tree Root's
             # SpiritPlane, its sigil in the Shadow Palace past the Magi House:
