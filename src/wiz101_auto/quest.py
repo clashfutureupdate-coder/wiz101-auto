@@ -56,7 +56,15 @@ from .marks import (
     team_return_action,
 )
 from .npc import ServicesMenu
-from .questlist import SIDE_WORLDS, CompletionTracker, load_completed, load_quest_list, load_world_lists, norm
+from .questlist import (
+    SIDE_WORLDS,
+    CompletionTracker,
+    left_with_dungeon_seen,
+    load_completed,
+    load_quest_list,
+    load_world_lists,
+    norm,
+)
 from .safe_teleport import allow_close_landing, allow_engage, teleport_aborted, walk_zone
 from .setbacks import ALWAYS_SKIP, DEFEATS_TO_DEFER, MAIN_DEFEATS_TO_DEFER, Setbacks
 from .teamup import TEAM_UP_NAMES, is_team_up_zone
@@ -4884,6 +4892,18 @@ class Quester:
         }
         # A quest missing from a partial read isn't done: only a full read counts.
         done = self.completions.update({q.name for _, q in all_quests}) if complete else set()
+        zone_read = await self.client.zone_name() or ""
+        inside = left_with_dungeon_seen(self.__dict__.setdefault("_seen_inside", {}),
+                                        [q.name for _, q in all_quests], zone_read)
+        talk = self.__dict__.get("_handed_talk") or self.__dict__.get("_last_talk")
+        talked = bool(talk) and time.monotonic() - talk[2] < TURN_IN_TALK_SECONDS
+        dropped = [n for n in done if inside.get(n) and not talked]
+        if dropped:
+            # A dungeon's own quest leaves the game's memory when you walk
+            # out: 'Lair of the Pit Boss' was logged done after a loss to
+            # Yolok the Listener (the player: quests wrongly marked complete).
+            logger.info(f"{', '.join(map(repr, dropped))} left with the dungeon: not completed")
+            done = [n for n in done if n not in dropped]
         if not complete:
             logger.warning(f"read {len(all_quests)} quests over {pages} pages without reaching the end")
         for name in done:

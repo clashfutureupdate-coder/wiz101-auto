@@ -148,6 +148,16 @@ class CompletionTracker:
             pass
 
 
+def left_with_dungeon_seen(seen_inside: dict[str, bool], names: list[str], zone: str) -> dict[str, bool]:
+    """Notes, per quest in this read, whether it was read inside a dungeon
+    (an Interiors zone); returns the map. A quest whose last sighting was
+    inside and that is gone from a read outside left with the dungeon."""
+    inside = "/Interiors/" in zone
+    for n in names:
+        seen_inside[n] = inside
+    return seen_inside
+
+
 # --- per-world lists and completion (for the dashboard) ------------------------
 
 WORLDS = (
