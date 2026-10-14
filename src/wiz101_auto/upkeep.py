@@ -461,6 +461,8 @@ async def unstick(client, frozen: bool = False) -> bool:
             return False
         me = _pt(await client.body.position())
         if frozen:
+            if await _home_out(client):
+                return True
             logger.warning(f"wizard frozen at ({me[0]:.0f}, {me[1]:.0f}): can't walk or teleport; relogging")
             return await _relog_out(client)
         logger.warning(f"wizard seems stuck at ({me[0]:.0f}, {me[1]:.0f}): can't walk; moving to a landmark")
@@ -524,6 +526,26 @@ async def relog_would_hurt(client) -> str:
     except Exception:
         return ""
     return ""
+
+
+async def _home_out(client) -> bool:
+    """Frozen where a relog lands back in the same spot (the Mine Docks: in on
+    Ivan's duel circle, no battle, no moving, through relogs and a game
+    restart): the home button, a teleport the game still takes. Not out of a
+    team dungeon or a room of the team run. True if it left the zone."""
+    from .teamup import in_team_run, is_team_up_zone
+    from .trainer import go_home
+
+    zone = await client.zone_name() or ""
+    if is_team_up_zone(zone) or in_team_run(zone):
+        return False
+    logger.warning("wizard frozen: pressing the home button to get out")
+    await go_home(client)
+    now = await client.zone_name() or ""
+    if now and now != zone:
+        logger.success(f"frozen no more: home button took us from {zone} to {now}")
+        return True
+    return False
 
 
 async def _relog_out(client) -> bool:
