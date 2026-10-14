@@ -386,6 +386,13 @@ async def status_loop(client, controller: Controller, fighter: Fighter, quester,
         # responding): the supervisor restarts it and logs back in.
         now = time.monotonic()
         try:
+            from .upkeep import connection_lost
+
+            if await connection_lost(client):
+                await asyncio.sleep(10.0)  # (the reconnect's loading screen)
+        except Exception as exc:
+            logger.debug(f"connection check failed: {exc!r}")
+        try:
             loading = await client.is_loading()
         except Exception:
             loading = False

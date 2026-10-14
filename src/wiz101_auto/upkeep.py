@@ -90,6 +90,30 @@ async def area_problem(client) -> bool:
     return True
 
 
+CONNECTION_LOST = "connection lost"
+
+
+def is_connection_lost(text: str) -> bool:
+    """The game's "ATTENTION / Connection Lost! / RECONNECT, QUIT" box."""
+    return CONNECTION_LOST in (text or "").lower()
+
+
+async def connection_lost(client) -> bool:
+    """The connection dropped (mid-fight in Mandible Cave, 19:55: the bot sat
+    behind the box for 50 minutes): press RECONNECT. True if the box was up."""
+    from .relog import _find_button
+
+    box = await ui.modal_box(client)
+    button = await _find_button(client.root_window, ("reconnect",))
+    if not (box is not None and is_connection_lost(await ui.modal_text(box))) and button is None:
+        return False
+    if button is not None:
+        await ui.click_center(client, button)
+    logger.warning("ALERT: the game lost its connection: "
+                   + ("pressed RECONNECT" if button is not None else "no RECONNECT button found"))
+    return True
+
+
 async def wait_for_loading(client, appear_timeout: float = 2.0):
     """Give a loading screen a moment to appear, then wait for it to finish
     (pressing OK on the game's PROBLEM box if a load hangs behind it)."""
