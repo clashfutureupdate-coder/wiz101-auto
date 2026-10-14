@@ -2549,6 +2549,12 @@ class Quester:
         logger.info("marking inside the dungeon before its fight (Recall back here after a defeat)")
         await self._mark_here("fight", objective=objective, require_clear=False)
 
+    def _live_mainline(self) -> set[str]:
+        """Main-story quests in the book, less those skipped for good (another
+        world's: 'Into the Sea' kept Polaris's giver sweep after 'Darling
+        Clementine' from ever running; side quests were taken instead)."""
+        return {n for n in (self._mainline or ()) if n not in self.setbacks.skipped}
+
     async def _dungeon_in_progress(self, zone: str) -> bool:
         """Inside a dungeon still being done: a learned one, a team's rooms, the
         one we went in by, or a room with other players (a team took us into
@@ -3343,7 +3349,7 @@ class Quester:
         if not in_main_world:
             return False  # the main quest's marker leads there (quest step)
         ask = getattr(self.givers, "main_sweep_zone", "")
-        if ask and not self._mainline and zone != ask and ask.split("/", 1)[0] == self._main_world:
+        if ask and not self._live_mainline() and zone != ask and ask.split("/", 1)[0] == self._main_world:
             # The next main quest's giver is likely where the last one ended.
             logger.info(f"no main quest: going to {ask.split('/')[-1]} to ask its NPCs for the next one")
             if await self.go_to_zone(ask) or await self.client.zone_name() != zone:
@@ -4980,7 +4986,7 @@ class Quester:
         # (A story skipped for good, another world's: 'Into the Sea' held as
         # main kept Polaris's gap after 'Darling Clementine' unseen; no giver
         # was asked and the bot went to side quests.)
-        live_main = sorted(n for n in (self._mainline or ()) if n not in self.setbacks.skipped)
+        live_main = sorted(self._live_mainline())
         if live_main:
             self._last_main = live_main[0]
             self._last_main_zone = await self.client.zone_name() or ""
@@ -9675,7 +9681,7 @@ class Quester:
         if getattr(self, "_parked", None):
             sweep = ""  # (the story quest waits for a team: no "next" one to ask for)
             self.givers.main_sweep_zone = ""
-        if (not self._mainline and sweep and sweep == await self.client.zone_name()
+        if (not self._live_mainline() and sweep and sweep == await self.client.zone_name()
                 and await self.givers.ask_nearby()):
             # The sweep for the next story quest goes on until everyone here
             # was asked (after 'Smart Food' it asked one statue in Cloudburst
