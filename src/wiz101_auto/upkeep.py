@@ -498,6 +498,13 @@ async def relog_would_hurt(client) -> str:
         zone = await client.zone_name() or ""
         if "/interiors/" in zone.lower() and await teammates(client, me):
             return "other players in this room"
+        from .teamup import in_team_run, is_team_up_zone
+
+        if "/interiors/" in zone.lower() and (is_team_up_zone(zone) or in_team_run(zone)):
+            # (Relogged in the Pit Boss Lair with the teammate out of sight,
+            # Bobrik beaten and Yolok next: back in Mantis City, the run lost.
+            # Never out of a dungeon in progress: the player's rule.)
+            return "a dungeon in progress"
     except Exception:
         return ""
     return ""
