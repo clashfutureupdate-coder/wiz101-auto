@@ -7306,6 +7306,13 @@ class Quester:
         in_quest_team = in_team_list(await self.client.zone_name() or "")
         alone_after = TEAM_ALONE_QUEST if in_quest_team else TEAM_ALONE_AFTER
         elif_alone = not self._team_with_us and now - self._team_alone_since > alone_after
+        from .teamup import _dungeon_base, beaten_bases
+
+        if _dungeon_base(here_now) in beaten_bases():
+            # The team's boss is beaten here: what's left is ours to do alone
+            # (the Mayor's House after Captain Zubkov: "alone for 63s",
+            # out, and the lever step undone).
+            return False
         if (elif_alone or gone) and now - self._team_alone_since > 0:
             # The team left (none seen for TEAM_GONE_AFTER: they went after
             # Apollo, and it waited alone in the Moon Chamber for 20 minutes).
