@@ -4897,7 +4897,8 @@ class Quester:
                                         [q.name for _, q in all_quests], zone_read)
         talk = self.__dict__.get("_handed_talk") or self.__dict__.get("_last_talk")
         talked = bool(talk) and time.monotonic() - talk[2] < TURN_IN_TALK_SECONDS
-        dropped = [n for n in done if inside.get(n) and not talked]
+        # (Only on a read outside: one inside is where its own quests finish.)
+        dropped = [n for n in done if inside.get(n) and not talked and "/Interiors/" not in zone_read]
         if dropped:
             # A dungeon's own quest leaves the game's memory when you walk
             # out: 'Lair of the Pit Boss' was logged done after a loss to
