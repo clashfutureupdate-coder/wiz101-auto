@@ -9695,6 +9695,10 @@ class Quester:
             # sweep's zone first (after Polaris's 'Darling Clementine' it took
             # 'Plotting Out Polar Roses' in Frigid Maw and never went back).
             logger.info(f"no main quest: going to {sweep.split('/')[-1]} to ask its NPCs for the next one")
+            world = sweep.split("/", 1)[0]
+            if here_now.split("/", 1)[0] != world:
+                await self._to_world(world, f"the next story quest's giver in {sweep.split('/')[-1]}")
+                return  # (in that world, the next step walks on to the zone)
             if not await self.go_to_zone(sweep) and await self.client.zone_name() == here_now:
                 self.givers.main_sweep_zone = ""  # no way there known
             return
