@@ -182,6 +182,9 @@ EXTRA_DISPLAY_ZONES = [
     # (Missing from the game's list: 'Catch Vonda Fish in Pitch Black Lake' read
     # no zone, and its marker led into the Storm Eye pyramid.)
     ("pitch black lake", "Azteca/AZ_Z08_PitchBlackLake"),
+    # (Not in the data: 'Free Miner in Frigid Maw' read no zone, and the bot
+    # searched only the Pit Boss Lair for them.)
+    ("frigid maw", "Polaris/PL_Z05_FrigidMine"),
     ("the oasis", "Krokotopia/KT_Hub"),  # Krokotopia's hub (quest book / objective text)
     ("katzenstein's lab", "Marleybone/MB_ScotlandYard/MB_KatzLab"),  # a dungeon off Scotland Yard Roof
     ("knight's court", "Marleybone/MB_ScotlandYard/MB_KnightsCourt"),

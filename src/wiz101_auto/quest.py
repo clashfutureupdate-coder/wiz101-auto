@@ -5927,6 +5927,17 @@ class Quester:
             self._scouted_for = self._far_swept_for = None
             logger.info(f"no {item!r} anywhere here: looking for anything like {names[level + 1]!r}")
             return True
+        # Seen before in the zone the objective names, and that's not here:
+        # there (Pit Boss Minak beaten, 'Free Miner in Frigid Maw' searched
+        # only the lair's room, then the main quest was set aside; the miners
+        # stand out in Frigid Maw).
+        target = objective_zone(objective) or ""
+        here = await self.client.zone_name() or ""
+        if (target and target != here
+                and self.entity_map.spots(target, lambda n: matches_item(item, n), (0.0, 0.0, 0.0))):
+            logger.info(f"{item!r} was seen in {target.split('/')[-1]} before: going there for it")
+            if await self.go_to_zone(target) or await self.client.zone_name() != here:
+                return True
         if await self._search_next_zone(item, objective):
             return True
         # Inside a dungeon an item that's nowhere often comes from its boss
