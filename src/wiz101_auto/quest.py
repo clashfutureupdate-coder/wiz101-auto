@@ -7284,6 +7284,12 @@ class Quester:
             # 90 s as "alone"): a teammate was seen here minutes ago.
             self._team_with_us = True
             self._mate_last_seen = now
+        fighter = self.fighter
+        if self._team_with_us and fighter is not None:
+            # A fight in here was with the team: the time in it counts as seen
+            # (Captain Zubkov's fight took 10 minutes; right after it, "no
+            # teammate seen for 4 min" and the bot left).
+            self._mate_last_seen = max(self._mate_last_seen, getattr(fighter, "combat_ended_at", 0.0))
         gone = self._team_with_us and now - self._mate_last_seen > TEAM_GONE_AFTER
         here_now = await self.client.zone_name() or ""
         if getattr(self, "_team_alone_zone", None) != here_now and not self._team_with_us:
