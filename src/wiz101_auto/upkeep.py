@@ -481,6 +481,11 @@ async def unstick(client, frozen: bool = False) -> bool:
         return False
 
 
+CIRCLE_STUCK_SECONDS = 60.0  # on a duel circle with no battle this long: the game's stuck state
+CIRCLE_STUCK_RESET = 600.0  # a circle stay older than this is a new one
+_circle_since: float | None = None
+
+
 async def relog_would_hurt(client) -> str:
     """Why logging out now would do harm ('' if it wouldn't): on a duel circle
     (a fight about to start: the player saw it log out of the Basstille's
@@ -493,9 +498,20 @@ async def relog_would_hurt(client) -> str:
         from .collect import duel_circles
         from .safe_teleport import ON_CIRCLE
 
-        if any(math.dist((me.x, me.y), c[:2]) < ON_CIRCLE for c in await duel_circles(client)):
-            return "on a duel circle"
         zone = await client.zone_name() or ""
+        if any(math.dist((me.x, me.y), c[:2]) < ON_CIRCLE for c in await duel_circles(client)):
+            # (A fight about to start, or under way: wait. But held on a lit
+            # circle with no battle for a minute is the game's stuck state, the
+            # one a relog frees: Ivan off the circle in the Mine Docks, the
+            # wizard frozen on it for 4 minutes.)
+            global _circle_since
+            now = time.monotonic()
+            if _circle_since is None or now - _circle_since > CIRCLE_STUCK_RESET:
+                _circle_since = now
+            if await client.in_battle() or now - _circle_since < CIRCLE_STUCK_SECONDS:
+                return "on a duel circle"
+        else:
+            _circle_since = None
         if "/interiors/" in zone.lower() and await teammates(client, me):
             return "other players in this room"
         from .teamup import in_team_run, is_team_up_zone
