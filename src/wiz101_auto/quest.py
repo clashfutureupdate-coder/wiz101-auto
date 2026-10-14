@@ -9688,7 +9688,17 @@ class Quester:
         if getattr(self, "_parked", None):
             sweep = ""  # (the story quest waits for a team: no "next" one to ask for)
             self.givers.main_sweep_zone = ""
-        if (not self._live_mainline() and sweep and sweep == await self.client.zone_name()
+        here_now = await self.client.zone_name() or ""
+        if (not self._live_mainline() and sweep and sweep != here_now and not await self.client.in_battle()
+                and not await self._dungeon_in_progress(here_now)):
+            # The next story quest's giver comes before side quests: to the
+            # sweep's zone first (after Polaris's 'Darling Clementine' it took
+            # 'Plotting Out Polar Roses' in Frigid Maw and never went back).
+            logger.info(f"no main quest: going to {sweep.split('/')[-1]} to ask its NPCs for the next one")
+            if not await self.go_to_zone(sweep) and await self.client.zone_name() == here_now:
+                self.givers.main_sweep_zone = ""  # no way there known
+            return
+        if (not self._live_mainline() and sweep and sweep == here_now
                 and await self.givers.ask_nearby()):
             # The sweep for the next story quest goes on until everyone here
             # was asked (after 'Smart Food' it asked one statue in Cloudburst
