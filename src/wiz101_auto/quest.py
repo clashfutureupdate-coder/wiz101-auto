@@ -9787,7 +9787,14 @@ class Quester:
             obj_now = await self.objective() or ""
             who = talk_target(obj_now) or defeat_target(obj_now) or ""  # ("Talk to Belloq" starts his fight)
             boss_here = DungeonMemory.load().bosses.get(who) == zone_now
-            if zone_now in team_list() and not is_combat_objective(obj_now) and not boss_here:
+            from .teamup import _dungeon_base, beaten_bases
+
+            # (Only once the team's boss is beaten here: after the Beastmaster
+            # lair's first fight, "Search For Beastmaster's Whistle" read as
+            # done; the bot searched alone while the teammate went on to
+            # Ludus, then left after "no teammate seen for 4 min".)
+            if (zone_now in team_list() and not is_combat_objective(obj_now) and not boss_here
+                    and _dungeon_base(zone_now) in beaten_bases()):
                 # A quest dungeon taken with a team (the team list): the fight
                 # is over, our quest goes on alone (the player: it followed an
                 # AFK teammate round Belloq's tent after the win).
