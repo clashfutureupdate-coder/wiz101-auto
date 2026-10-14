@@ -2401,7 +2401,10 @@ class Quester:
             finally:
                 self.controller.end_idle()
         beaten = beaten_bases()
-        if (is_team_dungeon(dungeon or "") and talk_target(objective_now)
+        # (Or a lever: 'Activate Cage Release Lever' after Captain Zubkov and
+        # Commandant Lassard were beaten queued for a team at the Mayor's House.)
+        solo_step = talk_target(objective_now) or objective_now.lower().startswith("activate ")
+        if (is_team_dungeon(dungeon or "") and solo_step
                 and (dungeon or "") not in TEAM_UP_DUNGEONS and _dungeon_base(dungeon or "") in beaten):
             # (Only once a team beat its boss: 'Go To Eclipse Tower' is no
             # fight by name, and the bot walked alone into Ravik Dreamscape.
