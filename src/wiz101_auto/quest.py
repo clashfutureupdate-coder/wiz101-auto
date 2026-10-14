@@ -7337,13 +7337,19 @@ class Quester:
             # (the Mayor's House after Captain Zubkov: "alone for 63s",
             # out, and the lever step undone).
             return False
-        if gone and _dungeon_base(here_now) != getattr(self, "_team_solo_base", None):
+        from .teamup import in_team_run
+
+        # (Or alone in a room of the team run: Bobrik beaten with the team in
+        # the Pit Boss Lair, the team on to Yolok, the bot "alone for 184s"
+        # and out.)
+        if ((gone or (elif_alone and in_team_run(here_now)))
+                and _dungeon_base(here_now) != getattr(self, "_team_solo_base", None)):
             # The team went on out of sight after fighting beside us: never
             # out of a dungeon in progress (the player's rule). On alone
             # toward the objective, where they're headed (the Pit Boss Lair:
             # Bobrik and Yolok beaten with a team, then 4 min lost and out).
             self._team_solo_base = _dungeon_base(here_now)
-            logger.warning("no teammate seen for 4 min: on with the dungeon alone, toward the objective")
+            logger.warning("no teammate in sight: on with the dungeon alone, toward the objective")
         if _dungeon_base(here_now) == getattr(self, "_team_solo_base", None):
             return False
         if (elif_alone or gone) and now - self._team_alone_since > 0:
