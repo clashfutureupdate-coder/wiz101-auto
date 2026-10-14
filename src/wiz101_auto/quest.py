@@ -5041,13 +5041,20 @@ class Quester:
         here = await self.client.zone_name() or ""
         # Side quests fill in only in the main quest's world (where it will be
         # picked up again at the next level), never a trip to another world.
-        main_quests = [q for _, q in all_quests if q.mainline]
+        # (Not a story skipped for good: 'Into the Sea' made Aquila the main
+        # world after Polaris's 'Darling Clementine', and the bot ground there.)
+        main_quests = [q for _, q in all_quests if q.mainline and q.name not in self.setbacks.skipped]
         main_world = next((w for w in map(quest_world, main_quests) if w), None)
         if main_world is None and main_quests:
             # The book's area name may be unknown; its objective can place it.
             zones = [objective_zone(q.goal) for q in main_quests if q.goal]
             main_world = next((z.split("/", 1)[0] for z in zones if z), None)
-        world = main_world or self._main_world or (here.split("/", 1)[0] if here else None)
+        # No story quest held: the last story quest's world (Polaris, after
+        # 'Darling Clementine'), not wherever the bot happens to stand.
+        last_zone = _load_last_main()[1]
+        last_zone = last_zone if "/" in last_zone else _load_last_main(2)
+        last_world = last_zone.split("/", 1)[0] if "/" in last_zone else None
+        world = main_world or last_world or self._main_world or (here.split("/", 1)[0] if here else None)
         det_now = self._detour_names()
         if main_world is None and det_now is not None and det_now[0].get("when_stuck") == "side":
             # Between the detour world's story quests: its side quests, in
