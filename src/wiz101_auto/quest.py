@@ -9833,7 +9833,10 @@ class Quester:
 
             if _base(zone_now) == self._team_solo_base:
                 team_mode = False  # (the team went out of sight: on alone)
-            else:
+            elif "/Interiors/" in zone_now:
+                # (Only another dungeon ends it: outside after a defeat, it was
+                # forgotten, and back in by Recall the bot left the Pit Boss
+                # Lair after "alone for 181s".)
                 self._team_solo_base = None
         if team_mode:
             from .teamup import team_list
