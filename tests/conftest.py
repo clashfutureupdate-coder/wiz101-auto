@@ -1,6 +1,14 @@
 """Shared test setup."""
 
+import importlib.util
+
 import pytest
+
+if importlib.util.find_spec("wizwalker") is None:
+    # Linux CI: WizWalker is Windows-only, so the tests get a stand-in.
+    from _wizwalker_stub import install
+
+    install()
 
 
 @pytest.fixture(autouse=True)

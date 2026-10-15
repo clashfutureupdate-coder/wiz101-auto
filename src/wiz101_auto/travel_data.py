@@ -350,7 +350,7 @@ def hops_to_place(current_zone: str, place: str) -> int | None:
 
 
 HUBS_FILE = Path("state") / "world_hubs.json"  # world -> the zone the hub button lands in (learned)
-_HUB_NAME = re.compile(r"(^|_)Hub(_|$)")
+_HUB_NAME = re.compile(r"(^|_)(Main)?Hub(_|$)")  # Grizzleheim's is GH_MainHub
 
 
 def learn_hub(zone: str):

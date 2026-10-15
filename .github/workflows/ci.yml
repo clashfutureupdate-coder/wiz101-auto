@@ -13,7 +13,14 @@ jobs:
         with:
           python-version: "3.13"
       # WizWalker is Windows-only (platform marker), so this installs just the
-      # pure-Python pieces needed for the unit tests.
+      # pure-Python pieces needed for the unit tests; tests/_wizwalker_stub.py
+      # stands in for WizWalker itself.
       - run: pip install -e ".[dev]"
+      # The zone and gate data the bot reads from WizSprinter's package.
+      - name: Fetch WizSprinter traversal data
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/Deimos-Wizard101/Deimos-Wizard101 "$RUNNER_TEMP/deimos"
+          git -C "$RUNNER_TEMP/deimos" sparse-checkout set libs/wizsprinter/wizwalker/extensions/wizsprinter/traversalData
+          echo "WIZWALKER_SRC=$RUNNER_TEMP/deimos/libs/wizsprinter" >> "$GITHUB_ENV"
       - run: ruff check .
       - run: pytest -q
