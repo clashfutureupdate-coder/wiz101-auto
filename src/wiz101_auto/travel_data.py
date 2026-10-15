@@ -179,6 +179,18 @@ EXTRA_DISPLAY_ZONES = [
     # The Grand Chasm's past, through the Hall of Time's portal: not the Grand Chasm itself.
     ("grand chasm past", "DragonSpire/DS_A1_Knowledge/DS_A1Z4_GrandChasm_Past"),
     ("ravenwood", "WizardCity/WC_Ravenwood"),
+    # The Arcanum (Polaris's story) isn't in the game's list: 'Talk To
+    # Librarian Fitzhume in The Arcanum' read no zone, and the bot walked at
+    # the World Tree's gate, then took the Spiral Map to Wizard City. Its
+    # halls' people are reached from the hub (Ignus Ferric, Qismah Shasa).
+    ("the arcanum", "Arcanum/AR_Z01_Hub"),
+    ("hall of theurgy", "Arcanum/AR_Z01_Hub"),
+    ("hall of pyromancy", "Arcanum/AR_Z01_Hub"),
+    ("hall of thaumaturgy", "Arcanum/AR_Z01_Hub"),
+    ("hall of conjuration", "Arcanum/AR_Z01_Hub"),
+    ("hall of divination", "Arcanum/AR_Z01_Hub"),
+    ("hall of necromancy", "Arcanum/AR_Z01_Hub"),
+    ("hall of sorcery", "Arcanum/AR_Z01_Hub"),
     # (Missing from the game's list: 'Catch Vonda Fish in Pitch Black Lake' read
     # no zone, and its marker led into the Storm Eye pyramid.)
     ("pitch black lake", "Azteca/AZ_Z08_PitchBlackLake"),
