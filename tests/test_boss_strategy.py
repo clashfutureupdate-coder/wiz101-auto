@@ -1123,3 +1123,34 @@ def test_a_non_lethal_hit_still_goes_when_holding_is_no_faster():
     b.cards = [frog, b.cards[1]]  # no Feint left to add: holding only waits for Orthrus's pips
     with um.patch.object(brain, "incoming_per_round", return_value=513.0):
         assert not brain._stacks_kept_for_the_kill(b, frog, boss)
+
+
+def test_darkmoor_boss_bans():
+    from wiz101_auto.combat.brain import _no_single_target
+    from wiz101_auto.combat.model import Battle, Card, Combatant, Effect, EffectKind, Target
+
+    def card(i, name, kind, target, value, school="", pips=0):
+        return Card(i, name, school=school or "myth", pip_cost=pips,
+                    effects=[Effect(kind, target, value, school=school)])
+
+    hand = [
+        card(0, "Mythblade", EffectKind.BLADE, Target.ALLY_SINGLE, 35, "myth"),
+        card(1, "Spirit Blade", EffectKind.BLADE, Target.ALLY_SINGLE, 35, pips=1),
+        card(2, "Feint", EffectKind.TRAP, Target.ENEMY_SINGLE, 70, pips=1),
+        card(3, "Myth Trap", EffectKind.TRAP, Target.ENEMY_SINGLE, 40, "myth"),
+        card(4, "Pixie", EffectKind.HEAL, Target.ALLY_SINGLE, 400, pips=2),
+        card(5, "Orthrus", EffectKind.DAMAGE, Target.ENEMY_ALL, 710, pips=7),
+    ]
+    me = Combatant("me", 3000, 4000, is_client=True, school="myth")
+
+    def castable(boss):
+        foe = Combatant(boss, 20000, 20000, is_enemy=True, is_boss=True, resist={})
+        b = _no_single_target(Battle(me=me, allies=[], enemies=[foe], cards=hand, pips=7, power_pips=0))
+        return {c.name for c in b.cards if c.castable}
+
+    assert castable("Sir Blackwater") == {"Feint", "Myth Trap", "Pixie", "Orthrus"}
+    assert castable("Howling Chaney") == {"Mythblade", "Spirit Blade", "Feint", "Myth Trap", "Orthrus"}
+    assert castable("Spirit of Darkmoor") == {"Pixie", "Orthrus"}
+    assert castable("Shane von Shane") == {"Mythblade", "Spirit Blade", "Myth Trap", "Orthrus"}
+    assert castable("Yevgeny NightCreeper") == {"Feint", "Myth Trap", "Pixie", "Orthrus"}
+    assert castable("Malistaire the Undying") == {"Mythblade", "Myth Trap", "Pixie", "Orthrus"}

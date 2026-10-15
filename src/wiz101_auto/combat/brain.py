@@ -2939,7 +2939,31 @@ BOSS_BANS = {
     # a Borealis Minion for every blade or trap cast, and steals traps onto us.
     "rasputin": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
     "the rat": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
+    # Darkmoor (the player's cheat list, 2026-10-14):
+    # Howling Chaney answers any heal with Gnomes on the healer.
+    "howling chaney": lambda c: c.is_heal and not c.is_damage,
+    # Sir Blackwater disarms a wizard who casts a blade (the bot bladed itself
+    # and lost each one, and the turn, to his Disarm).
+    "sir blackwater": _blade,
+    # Akhtang Wormcrawl steals a blade for every blade cast.
+    "akhtang wormcrawl": _blade,
+    # Spirit of Darkmoor: a blade brings her Scald on all of us; a trap on her
+    # her Assail (850 Myth, two Myth traps on the caster).
+    "spirit of darkmoor": lambda c: _blade(c) or (_single_trap_or_prism(c) and not c.is_damage),
+    # Shane von Shane: Feints countered; a heal brings his ~1,000 Vampire.
+    "shane von shane": lambda c: "feint" in c.name.lower() or (c.is_heal and not c.is_damage),
+    # Yevgeny NightCreeper freezes (stuns) a wizard who casts a blade, and
+    # pierces our shields.
+    "yevgeny nightcreeper": lambda c: _blade(c) or _shield(c),
+    # Malistaire the Undying steals or removes universal blades and traps:
+    # school ones only (Mythblade, Myth Trap), not Feint or Spirit Blade.
+    "malistaire the undying": lambda c: not c.is_damage and _universal_charm(c),
 }
+
+
+def _universal_charm(c: Card) -> bool:
+    """A blade or trap for every school (Feint, Spirit Blade)."""
+    return any(e.kind in (EffectKind.BLADE, EffectKind.TRAP) and not e.school for e in c.effects)
 
 
 def _boss_bans(battle: Battle) -> Battle:
