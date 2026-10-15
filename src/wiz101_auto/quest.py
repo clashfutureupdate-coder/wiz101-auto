@@ -3115,7 +3115,14 @@ class Quester:
             # the Plan!' open, and its quests stopped coming first in there.)
             open_here = dungeon_quest(self.__dict__.get("_last_quests", []), zone, objective_zone,
                                       skipped=self.setbacks.skipped, entered_with="")
-            if open_here is None and mark_done(self._dungeon[1]):
+            # Nor while a quest only ever read in here is open: the dungeon's
+            # own ('Iceblock Infiltration', its area the outside's 'Kataba
+            # IceBlock'), which the check above can't place in the dungeon. Kataba
+            # was marked done mid-way, the bot then followed 'Rasputin's
+            # Surprises' out each time, and the dungeon reset, for an hour.
+            outside = self.__dict__.get("_outside_names")
+            own = {q.name for q in self.__dict__.get("_last_quests", [])} - outside if outside else set()
+            if open_here is None and not own and mark_done(self._dungeon[1]):
                 logger.info(f"dungeon {self._dungeon[1].split('/')[-1]} noted as done")
         await ui.press_modal_button(self.client, box, "centerButton" if leave else "rightButton")
         if leave:
@@ -5204,6 +5211,8 @@ class Quester:
         inside = is_team_up_zone(here) or await self._in_dungeon(here) or "/interiors/" in here.lower()
         if not inside:
             self._ranked_outside = True
+            if complete:
+                self._outside_names = {q.name for _, q in all_quests}
         from .dungeons import load_done
 
         first_room = self._dungeon[1] if self._dungeon else here
