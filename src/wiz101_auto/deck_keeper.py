@@ -1,4 +1,4 @@
-"""The one deck, kept: with deck adapting off (config `combat.adapt_deck:
+﻿"""The one deck, kept: with deck adapting off (config `combat.adapt_deck:
 false`), the in-game deck is put back to state/deck_general.json whenever it
 differs, at a calm moment between steps.
 
@@ -157,13 +157,10 @@ def _load(path: Path) -> dict:
 ADDED_FILE = Path("state") / "deck_added.json"  # extras the keeper put in (taken out after)
 
 def restore_counts(target: dict[str, int], counts: dict[str, int]) -> dict[str, int]:
-    """`target` with each of the player's `counts` brought back up (never
-    down: copies added on purpose stay)."""
-    out = dict(target)
-    for name, copies in counts.items():
-        if out.get(name, 0) < copies:
-            out[name] = copies
-    return out
+    """`target` with each of the player's `counts` put back: lost copies come
+    back, extra ones go (the player: the Dragonfire Deck held 3 trained Feints,
+    1 is right; a boss's extras go in after this, on top)."""
+    return {**target, **counts}
 
 
 class DeckKeeper:
@@ -225,8 +222,8 @@ class DeckKeeper:
                         pass
                 keep = {n.lower() for n in baseline[role]} | {n.lower() for n in extra}
                 target = {n: c for n, c in target.items() if _named(n, keep)}
-                # Cards lost from the deck item come back to the player's
-                # counts (after the Khrysalis dreams the Dragonfire Deck read
+                # Cards lost from the deck item come back, extra ones go, to the
+                # player's counts (after the Khrysalis dreams the Dragonfire Deck read
                 # Gargantuan x1, Feint x3: no attacks, every boss fled).
                 target = restore_counts(target, (general.get("baseline_counts") or {}).get(role) or {})
             for key, base in list(self._added.items()):

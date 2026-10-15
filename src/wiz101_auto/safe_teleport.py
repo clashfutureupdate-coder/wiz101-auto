@@ -103,10 +103,16 @@ def allow_teleport(client, seconds: float = 6.0):
     client._teleport_until = time.monotonic() + seconds
 
 
+# Zones always walked: a teleport there lands on a scripted fight's circle and
+# leaves the wizard frozen (the Mine Docks: Rasputin's marker is on Ivan's
+# circle; teleported onto it, Ivan never came, through relogs and restarts).
+WALK_ZONES = ("Polaris/Interiors/PL_Z05_MineDocks",)
+
+
 def walk_zone(client, zone: str) -> bool:
-    """Walk-only here: config movement.walk_only, or a dungeon on the team
-    list (the player's multiplayer mode, walked like the Waterworks)."""
-    if any(zone.startswith(p) for p in getattr(client, "_walk_only", ())):
+    """Walk-only here: WALK_ZONES, config movement.walk_only, or a dungeon on
+    the team list (the player's multiplayer mode, walked like the Waterworks)."""
+    if any(zone.startswith(p) for p in (*WALK_ZONES, *getattr(client, "_walk_only", ()))):
         return True
     from .teamup import team_list
 

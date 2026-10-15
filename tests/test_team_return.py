@@ -119,7 +119,7 @@ def test_lost_cards_come_back():
     base = {"Gargantuan": 2, "Humongofrog": 1, "Mythblade": 2, "Orthrus - T02 - A": 2, "Feint": 1,
             "Spirit Blade": 1}
     got = restore_counts({"Gargantuan": 1, "Feint": 3}, base)
-    assert got == {**base, "Feint": 3}
+    assert got == base  # (3 trained Feints back down to the player's 1)
 
 
 def test_colossus_piece_is_a_statue_piece():
