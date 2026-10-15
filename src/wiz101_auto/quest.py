@@ -3618,6 +3618,15 @@ class Quester:
     async def _note_defeats(self):
         """After a defeat, count it against the objective; the second one sets the
         quest aside for another questline (until a level-up or an hour passes)."""
+        fled_out = getattr(self.fighter, "fled_out_of", None) if self.fighter else None
+        if fled_out:
+            self.fighter.fled_out_of = None
+            def base(z: str) -> str:
+                return re.sub(r"\d+$", "", z)  # (KambataUnderwater02: a room of KambataUnderwater)
+
+            if self._mark and self._mark.kind in RECALL_KINDS and base(self._mark.zone) == base(fled_out):
+                logger.info(f"fled out of {fled_out.split('/')[-1]}: Recalling back to the mark in there")
+                self._recall_pending = True
         deaths = getattr(self.controller, "losses", self.controller.deaths)
         if deaths <= self._seen_deaths:
             return

@@ -360,6 +360,11 @@ async def combat_loop(client, fighter: Fighter, cfg: Config, controller: Control
                 # We moved ourselves (won on 6%, then "moving somewhere clear"
                 # within the wait): not the game sending a defeated wizard back.
                 moved = False
+            if fighter.fled and moved and await client.zone_name() != fight_zone:
+                # Fleeing threw us out of the room (Kataba IceBlock's dungeon:
+                # out to Walruskberg, and the dungeon reset each time): the
+                # quester Recalls back to its mark in there, as after a defeat.
+                fighter.fled_out_of = fight_zone
             # (Fleeing moves us away too, but isn't a defeat.)
             if not fighter.fled and (hp <= 1 or (max_hp and hp / max_hp < DEATH_HEALTH_RATIO and moved)):
                 # Losing a fight sends you back (elsewhere) with a sliver of
