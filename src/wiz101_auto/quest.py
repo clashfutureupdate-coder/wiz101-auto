@@ -116,6 +116,8 @@ MAX_QUEST_SLOTS = 6
 MAX_BOOK_PAGES = 30  # the quest book, read to its last page (was 5: quests went missing)
 RANK_FULL_EVERY = 1800.0  # a full quest-book read at least this often (else memory and the cache say)
 RANK_QUESTS_EVERY = 120.0  # at most this often: quest-book rankings (on objective changes)
+SWEEP_TRIPS = 3  # trips to the story sweep's world pulled away before it waits
+SWEEP_PAUSE_SECONDS = 900.0
 NO_MAIN_ALERT_SECONDS = 1800.0  # "no main quest in the book" alert at most this often
 # Quest book window paths (mapped by Deimos).
 QUEST_LIST = ["WorldView", "DeckConfiguration", "wndQuestList"]
@@ -9787,6 +9789,10 @@ class Quester:
             sweep = ""  # (the story quest waits for a team: no "next" one to ask for)
             self.givers.main_sweep_zone = ""
         here_now = await self.client.zone_name() or ""
+        if here_now == sweep:
+            self._sweep_trips = 0
+        if time.monotonic() < getattr(self, "_sweep_paused_until", 0.0):
+            sweep = ""  # (a quest in another world pulled it away: that first)
         if (not self._live_mainline() and sweep and sweep != here_now and not await self.client.in_battle()
                 and not await self._dungeon_in_progress(here_now)):
             # The next story quest's giver comes before side quests: to the
@@ -9795,6 +9801,16 @@ class Quester:
             logger.info(f"no main quest: going to {sweep.split('/')[-1]} to ask its NPCs for the next one")
             world = sweep.split("/", 1)[0]
             if here_now.split("/", 1)[0] != world:
+                self._sweep_trips = getattr(self, "_sweep_trips", 0) + 1
+                if self._sweep_trips > SWEEP_TRIPS:
+                    # A quest taken during the sweep (Abner K. Doodle's 'talk to
+                    # Diego' in Wizard City) led away each time it got to
+                    # Arcanum, and the two pulled it back and forth all night.
+                    logger.warning(f"the trip to {sweep.split('/')[-1]} keeps getting pulled away: "
+                                   "the tracked quest first, the sweep in 15 min")
+                    self._sweep_trips = 0
+                    self._sweep_paused_until = time.monotonic() + SWEEP_PAUSE_SECONDS
+                    return
                 await self._to_world(world, f"the next story quest's giver in {sweep.split('/')[-1]}")
                 return  # (in that world, the next step walks on to the zone)
             if not await self.go_to_zone(sweep) and await self.client.zone_name() == here_now:
