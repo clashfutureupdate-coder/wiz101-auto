@@ -64,11 +64,21 @@ _TAGS = re.compile(r"<[^>]+>")
 
 
 async def window_at(client, path: list[str]):
-    """Follow `path` from the root window; returns the window or None."""
+    """Follow `path` from the root window; returns the window or None. A
+    visible match beats a hidden one: an old Spiral Map, hidden, sat first
+    under WorldView, so the open one read as closed and the bot walked on
+    with the map up for minutes (Walruskberg's world gate)."""
+    hidden = []
 
     async def _follow(window, rest):
         if not rest:
-            return window
+            try:
+                if await window.is_visible():
+                    return window
+            except Exception:
+                pass
+            hidden.append(window)
+            return None
         for child in await window.children():
             if await child.name() == rest[0]:
                 found = await _follow(child, rest[1:])
@@ -77,7 +87,8 @@ async def window_at(client, path: list[str]):
         return None
 
     try:
-        return await _follow(client.root_window, path)
+        found = await _follow(client.root_window, path)
+        return found if found is not None else (hidden[0] if hidden else None)
     except Exception as exc:  # memory can shift mid-read during zone changes
         logger.trace(f"window_at {path} failed: {exc}")
         return None
