@@ -145,12 +145,23 @@ async def connect(handler: ClientHandler):
     try:
         hooks = client.hook_handler
         await hooks.activate_all_hooks(wait_for_ready=False)
-        _click_left_of_center(client)
         # The window hook fills in at character select too (the player hooks
         # only in the world): a relog cut short left it there, and every
         # restart then timed out. Press Play first, then wait for the rest.
-        await asyncio.wait_for(hooks._wait_for_value(hooks._base_addrs["current_root_window"], None),
-                               timeout=HOOK_TIMEOUT)
+        # The click that fills it is repeated: started right after a game
+        # restart's login, one click landed while the game was still loading
+        # and the hook never filled ('Hooks did not activate within 90s').
+        root = asyncio.ensure_future(hooks._wait_for_value(hooks._base_addrs["current_root_window"], None))
+        try:
+            end = asyncio.get_running_loop().time() + HOOK_TIMEOUT
+            while not root.done():
+                if asyncio.get_running_loop().time() > end:
+                    raise TimeoutError
+                _click_left_of_center(client)
+                await asyncio.wait({root}, timeout=5.0)
+            root.result()
+        finally:
+            root.cancel()
         from .relog import at_character_select, play_from_character_select
         from .upkeep import reconnect_if_asked
 
