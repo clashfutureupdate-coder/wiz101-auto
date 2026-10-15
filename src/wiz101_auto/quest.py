@@ -3298,6 +3298,13 @@ class Quester:
             await ui.click(self.client, ui.SPIRAL_DOOR_EXIT)
             await asyncio.sleep(1.0)
             return True
+        world = (target or "").split("/", 1)[0]
+        if not world and self._chosen_entry and self._chosen_entry.zone:
+            world = self._chosen_entry.zone.replace(" ", "")  # the book's world ("Castle Darkmoor")
+        off_map =next((w for w, p in OFF_MAP_WORLDS.items() if world in (w, p.rstrip("/"))), None)
+        if off_map:
+            # (Castle Darkmoor: the map pressed Teleport for it over and over.)
+            return await self._to_world(off_map, f"{off_map} for the quest")
         logger.info("on the Spiral Map: going to the world the quest leads to")
         before = await self.client.zone_name()
         for _ in range(5):
