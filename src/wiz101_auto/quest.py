@@ -57,6 +57,7 @@ from .marks import (
 )
 from .npc import ServicesMenu
 from .questlist import (
+    QUEST_FINDER,
     SIDE_WORLDS,
     CompletionTracker,
     left_with_dungeon_seen,
@@ -169,6 +170,8 @@ NO_FIGHT_MANA_BELOW = 0.15  # ... or this mana
 NAMED_TALK_TRIES = 2  # talks to a same-named NPC away from the marker before following the marker
 HUB_SKIP_NEAR = 3000.0  # the quest marker this near: no hub button, walk to it
 FISH_PROBE_NEAR = 1500.0  # this near a fishing objective's marker: probe there
+FINDER_FOLLOW_SECONDS = 600.0  # Quest Finder tracked this long per try (its marker: a quest giver)
+FINDER_EVERY_SECONDS = 1800.0  # with no main quest in the book, Quest Finder first this often
 VISIT_RETRIES = 3  # a visit in this world with no way there: tries before it's dropped
 TRACK_RETRY_SECONDS = 15.0  # tracking the chosen quest failed: rank again this soon
 DUNGEON_TOP_UP = 0.8  # in a dungeon below this health: wisps, else a potion, before going on
@@ -194,6 +197,15 @@ DETOUR_ASK_SECONDS = 3600.0  # its NPCs asked again after this
 # {"zone", "asked"}: where the main story was last worked on (its NPCs asked for its next quest)
 MAIN_STORY_ZONE_FILE = Path("state") / "main_story_zone.json"
 VISIT_FILE = Path("state") / "visit_npc.json"  # {"npc", "zone"}: go and talk to them
+DOOR_MAP_FILE = Path("state") / "door_map.json"  # {zone: [[x, y], ...]}: doors walked through to map them
+DOOR_MAP_NEAR = 300.0  # a door object this close to a tried or learned door is that door
+
+
+def untried_doors(doors: list[tuple[float, float]], tried: list, learned: list) -> list[tuple[float, float]]:
+    """Doors of a zone not walked through yet: neither tried while mapping nor
+    a learned door of the zone (state/doors.json entries: [[x, y], start, dest])."""
+    known = [tuple(p[:2]) for p in tried] + [tuple(e[0][:2]) for e in learned]
+    return [d for d in doors if all(math.dist(d, k) > DOOR_MAP_NEAR for k in known)]
 # Worlds reached by a teleporter, not the Spiral Map (the player: Castle
 # Darkmoor from Darkside): world -> zone prefix; gone to by the Mark there.
 OFF_MAP_WORLDS = {"CastleDarkmoor": "G14_DM/"}
@@ -5122,6 +5134,21 @@ class Quester:
             # inefficient; the previous world's side quests instead").
             chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
                                   FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=True)
+        finder = next((q for _, q in all_quests if q.name == QUEST_FINDER and q.name not in set_aside), None)
+        if finder is not None and not (chosen and (chosen.mainline or chosen.activity)):
+            # Quest Finder's marker points at someone with a quest for us, the
+            # story's next one maybe (the player: after 'Gemstone Secrets' no
+            # giver was found for hours, and it grinded with Quest Finder in
+            # the book). Before grinding; with no main quest, first now and then.
+            now = time.monotonic()
+            since = self.__dict__.get("_finder_since", -1e9)
+            following = finder.active and now - since < FINDER_FOLLOW_SECONDS
+            if chosen is None or following or (not main_quests and now - since > FINDER_EVERY_SECONDS):
+                if not following:
+                    self._finder_since = now
+                    why = "no main quest in the book" if not main_quests else "nothing else to do"
+                    logger.info(f"{why}: following Quest Finder to a quest giver")
+                chosen = finder
         grinding = chosen is None and bool(all_quests)
         # A side quest from an earlier world while this world's people
         # haven't been asked (the player: in Azteca for Clemente Moraga with
@@ -7019,6 +7046,24 @@ class Quester:
                 logger.info(f"visit {npc}: the hub button, then the gates to {dest}")
                 self._teleported = True
                 arrived = await go_to_hub(self.client) and await self.go_to_zone(dest)
+            if not arrived and await self._map_doors(dest):
+                return True  # (a door walked through: the next step routes on from what it learned)
+            from .travel_data import world_hub
+
+            world_of = dest.split("/", 1)[0] + "/"
+            known = set(self.doors.doors) | {
+                e[2] for v in self.doors.doors.values() for e in v if len(e) > 2 and e[2]}
+            hub = world_hub(dest) or next((z for z in sorted(known)
+                                           if z.startswith(world_of) and z.endswith("_Hub")), None)
+            if not arrived and hub and hub != dest and not want.get("hub_tried"):
+                # The room may be wrong: Ignus Ferric's 'Hall of Pyromancy'
+                # read as AR_Z01_MythSchool, Qismah Shasa's as the FireSchool,
+                # and both were talked to in the Arcanum hub. Look for them
+                # across the hub before dropping the visit.
+                logger.info(f"visit {npc}: no way into {dest.split('/')[-1]}; looking for them in "
+                            f"{hub.split('/')[-1]} instead")
+                VISIT_FILE.write_text(json.dumps({**want, "zone": hub, "hub_tried": True}), encoding="utf-8")
+                return True
             if not arrived:
                 # Not reachable yet (Village of Sorrow before the story opens
                 # it): drop the visit (the giver waits an hour) rather than
@@ -8404,6 +8449,52 @@ class Quester:
             if all(distance(p, q) > 300 for q in out):
                 out.append(p)
         return out
+
+    async def _map_doors(self, dest: str) -> bool:
+        """No known way into `dest`, a room of the world we're in (Ignus
+        Ferric's Fire School and Qismah Shasa's Death School off the Arcanum
+        hub: the travel data has no Arcanum doors, and the bot only knew the
+        way out of them): walk through this zone's next untried door, nearest
+        first. The gate watch learns where it leads; the visit then routes
+        through it, or comes back and tries the next. True if it went through."""
+        zone = await self.client.zone_name() or ""
+        if not zone or zone == dest or zone.split("/", 1)[0] != dest.split("/", 1)[0]:
+            return False
+        if not await is_free(self.client) or await self._in_any_dungeon(zone):
+            return False
+        try:
+            tried = json.loads(DOOR_MAP_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            tried = {}
+        here = await self._position()
+        doors = {(round(d.x), round(d.y)): d for d in await self._doors_here(zone)}
+        left = untried_doors(list(doors), tried.get(zone, []), self.doors.doors.get(zone, []))
+        if not left:
+            return False
+        key = min(left, key=lambda d: math.dist(d, (here.x, here.y)))
+        door = doors[key]
+        tried.setdefault(zone, []).append(list(key))
+        try:
+            DOOR_MAP_FILE.parent.mkdir(exist_ok=True)
+            DOOR_MAP_FILE.write_text(json.dumps(tried), encoding="utf-8")
+        except OSError:
+            pass
+        logger.info(f"no way known into {dest.split('/')[-1]}: mapping {zone.split('/')[-1]}'s doors, "
+                    f"through the one at ({door.x:.0f}, {door.y:.0f}) ({len(left) - 1} more untried)")
+        await self.approach_and_walk(door, zone)
+        await wait_for_loading(self.client)
+        new = await self.client.zone_name() or ""
+        if new and new != zone:
+            if not self.doors.leading_to(zone, new):
+                # (The gate watch learns walks only: a walk from a teleport
+                # spot may not count. The walk-in starts a little before the door.)
+                far = max(math.dist((here.x, here.y), (door.x, door.y)), 1.0)
+                back = min(150.0, far) / far
+                start = (door.x + (here.x - door.x) * back, door.y + (here.y - door.y) * back, door.z)
+                self.doors.record(zone, (door.x, door.y, door.z), start, new)
+            logger.info(f"mapped: the door at ({door.x:.0f}, {door.y:.0f}) in {zone.split('/')[-1]} "
+                        f"leads to {new.split('/')[-1]}")
+        return True
 
     async def _search_doors_for(self, name: str, objective: str) -> bool:
         """X isn't where the quest said: walk through the doors around there,

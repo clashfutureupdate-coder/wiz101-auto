@@ -76,6 +76,9 @@ def load_quest_list(path: Path = QUEST_LIST) -> dict[str, ListedQuest]:
 
 
 RECHECK = 30  # recent completions that come back to the book are taken off
+# Always in the book, never completed: it points to a quest giver (the player).
+QUEST_FINDER = "Quest Finder"
+NOT_QUESTS = {QUEST_FINDER}
 
 
 class CompletionTracker:
@@ -91,6 +94,7 @@ class CompletionTracker:
 
     def update(self, names: set[str]) -> list[str]:
         """Feed the names in the book now; returns quests completed since."""
+        names = set(names) - NOT_QUESTS  # (Quest Finder "completed" every half hour)
         # Back in the book: it wasn't done. Crimson Fields' battlefields each
         # show only their own quest, hiding the others while inside one.
         back = self._logged & names
@@ -136,6 +140,7 @@ class CompletionTracker:
         return new
 
     def log(self, names: list[str]):
+        names = [n for n in names if n not in NOT_QUESTS]
         if not names:
             return
         self._logged |= set(names)
