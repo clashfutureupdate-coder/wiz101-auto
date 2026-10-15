@@ -148,6 +148,16 @@ START_EARLY_WORDS = ("start early", "start early!", "start now", "start")
 
 EARLY_PRESS_GAP = 120.0  # START EARLY pressed at most this often (it's a toggle)
 _early_pressed = [-1e9]
+FULL_TEAM_WAIT = 10 * 60  # a dungeon asking for 4 (Darkmoor): no START EARLY before this
+
+
+def early_ok(queue: dict, now: float | None = None) -> bool:
+    """START EARLY may be pressed for this queue: not while a dungeon asking
+    for a team of 4 has waited less than FULL_TEAM_WAIT (the player: Darkmoor
+    with 4 players if possible)."""
+    if team_size(queue.get("dungeon") or "") < 4:
+        return True
+    return (now if now is not None else time.time()) - float(queue.get("at") or 0) >= FULL_TEAM_WAIT
 
 
 async def start_early(client) -> bool:
@@ -157,7 +167,7 @@ async def start_early(client) -> bool:
     # Once per team: the button is a toggle ("Start Early 0/2" -> 1/2 -> 0/2):
     # pressed every few seconds it readied and un-readied us, and the team
     # never started.
-    if time.monotonic() - _early_pressed[0] < EARLY_PRESS_GAP:
+    if time.monotonic() - _early_pressed[0] < EARLY_PRESS_GAP or not early_ok(load_queue()):
         return False
     # (The button reads "START EARLY 1/2" with a player in: exact text never matched.)
     found = await _path_to_text(client.root_window, START_EARLY_WORDS[:3], [], prefix=True)
