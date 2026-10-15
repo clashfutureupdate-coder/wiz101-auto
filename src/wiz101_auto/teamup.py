@@ -926,7 +926,10 @@ async def team_up(quester, dungeon: str) -> str:
         form_done = True
         already = True
     await _dump(client, "window")
-    if dungeon in team_list():
+    # (The player's pinned quest: wait here for the team, not off on other
+    # quests: they pinned Castle Darkmoor and the bot went back to Azteca.)
+    pinned_here = bool(getattr(quester, "_pin", "")) and team_list().get(dungeon) == quester._pin
+    if dungeon in team_list() and not pinned_here:
         # A main-quest boss too hard alone (the player): queued, don't stand
         # at the sigil; side quests fill the wait and the team-ready prompt
         # is accepted wherever we are (team_ready_watch). 2+ players.

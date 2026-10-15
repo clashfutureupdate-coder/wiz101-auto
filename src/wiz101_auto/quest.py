@@ -192,6 +192,10 @@ DETOUR_ASK_SECONDS = 3600.0  # its NPCs asked again after this
 # {"zone", "asked"}: where the main story was last worked on (its NPCs asked for its next quest)
 MAIN_STORY_ZONE_FILE = Path("state") / "main_story_zone.json"
 VISIT_FILE = Path("state") / "visit_npc.json"  # {"npc", "zone"}: go and talk to them
+# Worlds reached by a teleporter, not the Spiral Map (the player: Castle
+# Darkmoor from Darkside): world -> zone prefix; gone to by the Mark there.
+OFF_MAP_WORLDS = {"CastleDarkmoor": "G14_DM/"}
+
 SPIRAL_WORLD_NAMES = {"WizardCity": "wizard city", "Krokotopia": "krokotopia", "Marleybone": "marleybone",
                       "MooShu": "mooshu", "DragonSpire": "dragonspyre", "Celestia": "celestia",
                       "Grizzleheim": "grizzleheim",
@@ -5568,16 +5572,16 @@ class Quester:
                 # went off visiting Wizard City for side quests).
                 self._pin_missing = 0
                 pinned = new[0]  # (a class quest still comes first: below)
+        queued_pin = False
         if pinned is not None and pinned.name in set_aside:
             from .teamup import load_queue
 
-            if load_queue().get("quest") == pinned.name:
-                # Aside only while its Team Up is queued: other quests
-                # meanwhile, the pick kept for after (the player: the bot
-                # queued for Castle Darkmoor, dropped the pin and went back
-                # to the main story).
-                return chosen
-        if pinned is None or pinned.name in set_aside:
+            # Aside only while its Team Up is queued: the pick is still
+            # followed (back to its sigil to wait for the team), not dropped
+            # (the player: queued for Castle Darkmoor, the bot dropped the
+            # pin and went back to the main story).
+            queued_pin = load_queue().get("quest") == pinned.name
+        if pinned is None or (pinned.name in set_aside and not queued_pin):
             why = "done" if pinned is None else "set aside"
             logger.info(f"your pick {self._pin!r} is {why}; choosing quests again")
             self._pin = ""
@@ -6605,6 +6609,19 @@ class Quester:
         stage after stage without going back to the step in between (each
         stage waited a whole step's checks: the trip took half a minute). True
         if it acted; False once in `world` (off the map)."""
+        prefix = OFF_MAP_WORLDS.get(world)
+        if prefix:
+            # Not on the Spiral Map (the player: Castle Darkmoor is a
+            # teleporter in Darkside): by the Mark if it's there, else the map
+            # is no use.
+            if await ui.is_visible(self.client, ui.SPIRAL_DOOR_TELEPORT):
+                await ui.click(self.client, ui.SPIRAL_DOOR_EXIT)
+                await asyncio.sleep(1.0)
+            if self._mark and self._mark.zone.startswith(prefix):
+                logger.info(f"{why}: {world} isn't on the Spiral Map; Recall to the mark there")
+                return await self._recall(self._mark.zone, f"the mark in {world}")
+            logger.warning(f"{why}: {world} isn't on the Spiral Map and there's no mark there")
+            return False
         acted = False
         deadline = time.monotonic() + SPIRAL_TRIP_SECONDS
         while time.monotonic() < deadline:
