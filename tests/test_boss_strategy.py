@@ -764,8 +764,8 @@ def test_avalon_boss_bans():
     assert castable("Black Annie") == {"Mythblade", "Orthrus"}
     # (Only single-target attacks of rank 6+ get the Scarecrow: traps are fine.)
     assert castable("The Pendragon") == {"Myth Trap", "Mythblade", "Orthrus"}
-    # Polaris: every blade or trap brings Rasputin a Borealis Minion.
-    assert castable("Rasputin") == {"Orthrus"}
+    # Polaris: Rasputin's Feint cheat: no traps on him, blades are fine.
+    assert castable("Rasputin") == {"Mythblade", "Orthrus"}
 
 
 def test_poseidon_and_the_sand_squid():
@@ -1154,3 +1154,18 @@ def test_darkmoor_boss_bans():
     assert castable("Shane von Shane") == {"Mythblade", "Spirit Blade", "Myth Trap", "Orthrus"}
     assert castable("Yevgeny NightCreeper") == {"Feint", "Myth Trap", "Pixie", "Orthrus"}
     assert castable("Malistaire the Undying") == {"Mythblade", "Myth Trap", "Pixie", "Orthrus"}
+
+
+def test_rasputin_minions_first():
+    from wiz101_auto.combat.brain import Strategy, attack_value, minions_first
+    from wiz101_auto.combat.model import Battle, Card, Combatant, Effect, EffectKind, Target
+
+    me = Combatant("Me", 4000, 4000, is_enemy=False, resist={})
+    rat = Combatant("Rasputin", 20000, 20000, is_enemy=True, is_boss=True, resist={})
+    minion = Combatant("Borealis Minion", 3000, 3000, is_enemy=True, resist={})
+    frog = Card(0, "Humongofrog", school="myth", pip_cost=4,
+                effects=[Effect(EffectKind.DAMAGE, Target.ENEMY_SINGLE, 500)])
+    b = Battle(me=me, allies=[], enemies=[rat, minion], cards=[frog], pips=7, power_pips=0)
+    assert minions_first(b)
+    s = Strategy()
+    assert attack_value(frog, b, minion, s) > attack_value(frog, b, rat, s)

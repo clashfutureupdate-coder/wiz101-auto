@@ -356,8 +356,23 @@ def attack_value(card: Card, battle: Battle, target: Combatant | None, strat: St
         # Focus fire: the bigger the share of a target's remaining health we take,
         # the sooner it stops attacking (so the weakest enemy goes first).
         value += strat.focus_bonus * min(1.0, dmg / max(1, t.health))
+    if not card.is_aoe and target is not None and minions_first(battle):
+        # His minions hit hard after 3 rounds (the player): single hits on them first.
+        value += -MINIONS_FIRST_BONUS if target.is_boss else MINIONS_FIRST_BONUS
     # Prefer cheaper spells for the same result so we keep pips for later.
     return value - card.pip_cost * 5
+
+
+# Bosses whose minions go first (the player: Rasputin's, Horizon Hold).
+MINIONS_FIRST = ("rasputin", "the rat")
+MINIONS_FIRST_BONUS = 2000.0
+
+
+def minions_first(battle: Battle) -> bool:
+    """A MINIONS_FIRST boss alive with other enemies beside him."""
+    live = battle.live_enemies
+    return any(e.is_boss and e.name.lower().startswith(MINIONS_FIRST) for e in live) and any(
+        not e.is_boss for e in live)
 
 
 def predicted_crits(battle: Battle, action: Action) -> dict[int, tuple[int, int, int, int]]:
@@ -2935,10 +2950,12 @@ BOSS_BANS = {
         or (c.is_damage and any(e.kind not in (EffectKind.DAMAGE, EffectKind.DOT) for e in c.effects))),
     # The Sand Squid's tentacles Earthquake (blade wipe) for every heal.
     "sand squid tentacle": lambda c: c.is_heal,
-    # Polaris (the player's list): Rasputin, "The Rat" (Borealis Peaks), spawns
-    # a Borealis Minion for every blade or trap cast, and steals traps onto us.
-    "rasputin": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
-    "the rat": lambda c: not c.is_damage and (_blade(c) or EffectKind.TRAP in c.kinds),
+    # Polaris (the player, 2026-10-15, Horizon Hold): Rasputin, "The Rat",
+    # answers a second Feint by moving every negative effect on him onto the
+    # caster (his "Fool me once?"), and steals traps onto us: no traps on him,
+    # blades instead (they were banned before, from an older list).
+    "rasputin": lambda c: not c.is_damage and EffectKind.TRAP in c.kinds,
+    "the rat": lambda c: not c.is_damage and EffectKind.TRAP in c.kinds,
     # Darkmoor (the player's cheat list, 2026-10-14):
     # Howling Chaney answers any heal with Gnomes on the healer.
     "howling chaney": lambda c: c.is_heal and not c.is_damage,
