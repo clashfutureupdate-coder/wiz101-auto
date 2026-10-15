@@ -2084,6 +2084,17 @@ class Quester:
             # the hub" by name (the Spiral Cup's entry hall): the button took
             # it out and it walked back in, over and over. The marker leads on.
             return False
+        if "/interiors/" in zone.lower() and dest.split("/")[0] == zone.split("/")[0]:
+            # A room the marker walked us into, its objective named by the
+            # area outside ('Enter Cold Steel Vault in Kataba IceBlock': the
+            # dungeon's door led into the Golem Garden, the hub button took it
+            # out from there, and the dungeon reset, an hour of it). A marker
+            # here leads on: follow it.
+            try:
+                if distance(await self.client.quest_position.position(), XYZ(0, 0, 0)) > 1:
+                    return False
+            except Exception:
+                pass
         try:
             marker = await self.client.quest_position.position()
             near = distance(marker, await self._position()) < HUB_SKIP_NEAR
