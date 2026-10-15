@@ -5568,6 +5568,15 @@ class Quester:
                 # went off visiting Wizard City for side quests).
                 self._pin_missing = 0
                 pinned = new[0]  # (a class quest still comes first: below)
+        if pinned is not None and pinned.name in set_aside:
+            from .teamup import load_queue
+
+            if load_queue().get("quest") == pinned.name:
+                # Aside only while its Team Up is queued: other quests
+                # meanwhile, the pick kept for after (the player: the bot
+                # queued for Castle Darkmoor, dropped the pin and went back
+                # to the main story).
+                return chosen
         if pinned is None or pinned.name in set_aside:
             why = "done" if pinned is None else "set aside"
             logger.info(f"your pick {self._pin!r} is {why}; choosing quests again")
