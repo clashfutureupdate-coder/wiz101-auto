@@ -114,9 +114,12 @@ def walk_zone(client, zone: str) -> bool:
     the team list (the player's multiplayer mode, walked like the Waterworks)."""
     if any(zone.startswith(p) for p in (*WALK_ZONES, *getattr(client, "_walk_only", ()))):
         return True
-    from .teamup import team_list
+    from .teamup import is_team_up_zone
 
-    if zone not in team_list():
+    # (Any room of a team-only dungeon, listed by zone or by its sigil: the
+    # Darkmoor sigils were listed as "zone@x,y", and the bot teleported about
+    # the Main Hall in front of its team.)
+    if not is_team_up_zone(zone):
         return False
     # Alone in there (the teammate left): teleports again, like questing solo
     # (the player: it struggled to walk to the objective with nobody around).

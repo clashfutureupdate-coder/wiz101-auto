@@ -28,7 +28,11 @@ from .upkeep import wait_for_loading
 TEAM_UP_DUNGEONS = {"Aquila/AQ_Z01_MountOlympus",
                     "WizardCity/Gauntlets/WC_Triton_Gauntlet1/WC_Triton_Gauntlet_01"}  # the Waterworks
 # Every zone of those dungeons (their rooms are separate interiors).
-TEAM_UP_PREFIXES = ("Aquila/AQ_Z01_", "Aquila/Interiors/AQ_Z01_", "WizardCity/Gauntlets/WC_Triton_Gauntlet1/")
+TEAM_UP_PREFIXES = ("Aquila/AQ_Z01_", "Aquila/Interiors/AQ_Z01_", "WizardCity/Gauntlets/WC_Triton_Gauntlet1/",
+                    "G14_DM/")  # Darkmoor's rooms (the player: with a team, walking)
+# Zones under those prefixes that aren't dungeon rooms: Castle Darkmoor's hub
+# (its sigils; the Mark there is how the bot gets back to Darkmoor).
+TEAM_UP_HUBS = {"G14_DM/DM_Z01_CastleDarkmoor"}
 # How quest steps name those dungeons ("Defeat Zeus Sky Father in Mount Olympus").
 TEAM_UP_NAMES = ("mount olympus", "waterworks")
 TEAM_UP_WORDS = ("team up!", "team up")
@@ -315,6 +319,8 @@ def _room_no(zone: str) -> int:
 def is_team_up_zone(zone: str) -> bool:
     """A room of a dungeon that is only entered with a team."""
     teams = team_list()
+    if zone in TEAM_UP_HUBS:
+        return False
     if zone in TEAM_UP_DUNGEONS or zone.startswith(TEAM_UP_PREFIXES) or in_team_list(zone):
         return True
     if zone and teams and in_team_run(zone):
@@ -750,7 +756,7 @@ def _outdoors(zone: str) -> bool:
 
     if not zone or "/interiors/" in zone.lower():
         return False
-    if zone in TEAM_UP_DUNGEONS or zone.startswith(TEAM_UP_PREFIXES):
+    if zone in TEAM_UP_DUNGEONS or (zone.startswith(TEAM_UP_PREFIXES) and zone not in TEAM_UP_HUBS):
         return False
     try:
         return zone not in DungeonMemory.load().dungeons
