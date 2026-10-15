@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from ..names import lang_name
-from .model import Battle, Card, Combatant, Effect, EffectKind, Target
+from .model import Battle, Card, Combatant, Effect, EffectKind, Target, normalize_card
 
 if TYPE_CHECKING:  # pragma: no cover
     from wizwalker.combat import CombatCard, CombatHandler, CombatMember
@@ -85,6 +85,8 @@ def map_effect(effect_name: str, target_name: str, param: float, rounds: int = 0
         kind = EffectKind.STUN
     elif effect_name == "summon_creature":
         kind = EffectKind.SUMMON
+    elif effect_name == "remove_ward" and target in _ENEMY:
+        kind = EffectKind.REMOVE_WARD  # (Pierce: "Remove <ward>")
 
     return Effect(kind=kind, target=target, value=value, rounds=rounds)
 
@@ -103,6 +105,7 @@ def average_effects(groups: list[list[Effect]]) -> list[Effect]:
 # --- live readers (Windows / game only) --------------------------------------
 
 _RANDOM = {"RandomSpellEffect", "RandomPerTargetSpellEffect"}
+_OTHER_SEEN: set[tuple[str, str]] = set()
 _LIST = {"EffectListSpellEffect", "ShadowSpellEffect", "ShadowPactSpellEffect"}
 
 
@@ -145,6 +148,12 @@ async def read_effects(effect, depth: int = 0) -> list[Effect]:
     except Exception:
         pass
     mapped = map_effect(effect_type.name, target.name, param, rounds)
+    if mapped.kind is EffectKind.OTHER and (effect_type.name, target.name) not in _OTHER_SEEN:
+        # (What OTHER stands for, once each: Pierce's and the Nova's real
+        # effect types weren't known when they were modelled.)
+        _OTHER_SEEN.add((effect_type.name, target.name))
+        logger.info(f"spell effect read as OTHER: {effect_type.name} on {target.name}, "
+                    f"param {param}, {rounds} round(s)")
     try:
         school = (await effect.string_damage_type() or "").strip().lower()
         mapped.school = "" if school in _ALL_SCHOOLS else school
@@ -175,6 +184,17 @@ async def school_pips(member) -> dict[str, int]:
         seen = ", ".join(f"{k} {n}" for k, n in found.items())
         logger.info(f"class pips: {seen} (our school's count as power pips, others' as pips)")
     return found
+
+async def shadow_pips(member) -> int:
+    """Our shadow pips (WizWalker: CombatMember.shadow_pips ->
+    CombatParticipant.num_shadow_pips -> PipCount.shadow_pips); 0 if unread.
+    Only shadow spells (Shadow Self Nova) spend them."""
+    try:
+        return int(await member.shadow_pips() or 0)
+    except Exception as exc:
+        logger.debug(f"shadow pips unreadable: {exc!r}")
+        return 0
+
 
 async def _is_item(card) -> bool:
     try:
@@ -211,7 +231,7 @@ async def read_card(index: int, card: CombatCard) -> Card | None:
             school = await template.magic_school_name()
         except Exception:
             pass
-        return Card(
+        return normalize_card(Card(
             index=index,
             name=name,
             school=school,
@@ -224,7 +244,7 @@ async def read_card(index: int, card: CombatCard) -> Card | None:
             item=await _is_item(card),
             template_name=template_name,
             template_id=template_id,
-        )
+        ))
     except Exception as exc:
         logger.debug(f"could not read card {index}: {exc}")
         return None
@@ -514,6 +534,7 @@ async def read_battle(handler: CombatHandler) -> BattleSnapshot:
         pips=await me_member.normal_pips() + sum(n for s, n in classes.items() if s != own),
         power_pips=await me_member.power_pips() + classes.get(own, 0),
         school_pips=classes,
+        shadow_pips=await shadow_pips(me_member),
         round=await handler.round_number(),
     )
     return BattleSnapshot(battle, card_map, members)

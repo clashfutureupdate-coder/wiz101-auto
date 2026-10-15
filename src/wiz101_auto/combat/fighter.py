@@ -16,7 +16,16 @@ from wizwalker.combat import CombatHandler
 from .. import ui
 from ..deck import load_deck_counts
 from ..dungeons import DungeonMemory
-from .brain import Strategy, decide, out_of_attacks, plan_fight, predicted_damage, prism_first
+from .brain import (
+    Strategy,
+    card_rules,
+    decide,
+    out_of_attacks,
+    plan_fight,
+    predicted_damage,
+    prism_first,
+    specials,
+)
 from .model import Action, ActionKind, Card, EffectKind
 from .reader import read_battle
 
@@ -673,6 +682,9 @@ class Fighter(CombatHandler):
             for c in battle.cards:
                 if c.name in self._unusable:
                     c.castable = False
+            # Shadow spells only with a shadow pip; Frenzy only with the hit
+            # it's for in reach; Pierce only to put a kill back in range.
+            card_rules(battle)
 
             if FLEE_FILE.exists():
                 # The user asked (state/flee.request): flee whatever the rules say.
@@ -825,6 +837,9 @@ class Fighter(CombatHandler):
             team = bool(battle.allies)
             if not reshuffling and not team and time.monotonic() - round_started < LOOKAHEAD_LATE:
                 action = await self._lookahead(battle, action, discards_left)
+                # (The planner's pick too: the last attack is held for a
+                # stacked kill, the Nova on a shadow pip, Pierce on a shield.)
+                action = specials(battle, action) or action
             action = prism_first(battle, action)  # never a big hit into a resist a prism in hand turns
             from .brain import luska_guard
 
@@ -860,7 +875,8 @@ class Fighter(CombatHandler):
                 for e in battle.enemies
             )
             logger.info(
-                f"[round {battle.round}] pips={battle.pips}+{battle.power_pips}P "
+                f"[round {battle.round}] pips={battle.pips}+{battle.power_pips}P"
+                f"{f'+{battle.shadow_pips}S' if battle.shadow_pips else ''} "
                 f"hp={battle.me.health}/{battle.me.max_health}{_minion_text(battle)} vs {foes} -> "
                 f"{action.describe()}"
             )

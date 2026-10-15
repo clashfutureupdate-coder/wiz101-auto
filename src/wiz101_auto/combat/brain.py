@@ -39,6 +39,7 @@ from .model import (
     Effect,
     EffectKind,
     Target,
+    is_trap_card,
 )
 
 
@@ -1301,7 +1302,7 @@ def _pick_enchant(battle: Battle, attack_card: Card) -> Card | None:
     ]
     if not enchants:
         return None
-    return max(enchants, key=lambda c: sum(e.value for e in c.effects))
+    return max(enchants, key=enchant_value)  # (by value: Epic, Colossal, Gargantuan...)
 
 
 def _is_duplicate(card: Card, kind: EffectKind, effects: list[tuple[str, str, float]],
@@ -1317,6 +1318,11 @@ def _is_duplicate(card: Card, kind: EffectKind, effects: list[tuple[str, str, fl
         # don't (the player: the pet's, Shango's amulet's and the trained
         # Mythblade are three blades of the same size that all stack).
         key = f"spell:{card.template_id}"
+        if card.enchanted and kind is EffectKind.TRAP:
+            # A Potent Trap'd copy stacks with the plain one (the player): a
+            # duplicate only when one just as big is up.
+            size = max((e.value / 100 for e in card.effects if e.kind is kind), default=0.0)
+            return any(k == key and abs(v - size) < 0.005 for k, _s, v in effects)
         if any(k == key for k, _s, _v in effects):
             return True
         if any(k.startswith("spell:") for k, _s, _v in effects):
@@ -1847,6 +1853,18 @@ def plan_fight(battle: Battle, strat: Strategy | None = None) -> FightPlan:
             state = replace(state, pips=left, power_pips=0, cards=cards, upcoming=draws[n:])
         total += n
         parts.append(f"{e.name} {e.health}hp: {how} = {n} round{'s' if n != 1 else ''}")
+    if total >= 99:
+        # Past the horizon: every blade and trap stacked, then one hit (the
+        # whole buff pile before Orthrus against a 15,000 boss).
+        hits = [c for c in [*battle.cards, *battle.upcoming] if c.is_damage and not c.banned]
+        if hits:
+            hit = max(hits, key=lambda c: (c.is_aoe, c.base_damage()))
+            shot = one_shot_plan(battle, hit)
+            if shot.kills:
+                total = shot.rounds
+                parts = [f"one shot: {' > '.join(shot.steps)} = {shot.rounds} rounds"]
+            else:
+                parts.append(f"fully stacked {hit.name} ~{min(shot.damage.values(), default=0):.0f}: no kill")
     boss = any(e.is_boss for e in enemies)
     # A quick fight, or a boss fight that's nearly over: a minion (X-pip, all
     # our pips) would arrive too late to matter.
@@ -2174,11 +2192,58 @@ def _use_up(effects: list[tuple[str, str, float]], school: str) -> list[tuple[st
     matching trap/blade (or shield) is spent."""
     out, spent = [], set()
     for key, eff_school, value in effects:
+        if key.startswith(AURA_KEY):
+            out.append((key, eff_school, value))  # (a timed aura: Frenzy lasts its rounds, hits or not)
+            continue
         if key not in spent and (not eff_school or eff_school == school):
             spent.add(key)
             continue
         out.append((key, eff_school, value))
     return out
+
+
+# A timed boost on us in a plan (Frenzy: +40% for 4 rounds): "aura:<spell>:<last depth>".
+AURA_KEY = "aura:"
+
+
+def fx_id(card: Card) -> str:
+    """A planned blade/trap's key: copies of one spell share it; an enchanted
+    copy (Potent Trap on a Feint) is another spell and stacks."""
+    return f"plan:{card.template_id or card.name}{'+' if card.enchanted else ''}"
+
+
+def timed_fx(card: Card, depth: int) -> list[tuple[str, str, float]]:
+    """A timed blade cast at `depth`: it boosts the hits of the next
+    `timed_blade` rounds (depth+1 .. depth+rounds), then it's gone."""
+    last = depth + card.timed_blade
+    return [(f"{AURA_KEY}{card.template_id or card.name}:{last}", (e.school or "").lower(), e.value / 100)
+            for e in card.effects if e.kind is EffectKind.BLADE]
+
+
+def expire(fx: list[tuple[str, str, float]], depth: int) -> list[tuple[str, str, float]]:
+    """Timed boosts still up for a hit at `depth`."""
+    if not any(k.startswith(AURA_KEY) for k, _s, _v in fx):
+        return fx
+    return [t for t in fx if not t[0].startswith(AURA_KEY) or int(t[0].rsplit(":", 1)[1]) >= depth]
+
+
+def aura_up(card: Card, fx: list[tuple[str, str, float]]) -> bool:
+    return any(k.startswith(f"{AURA_KEY}{card.template_id or card.name}:") for k, _s, _v in fx)
+
+
+def with_pip_gain(card: Card, school: str, normal: int, power: int) -> tuple[int, int]:
+    """Pips after a spell that gives pips (the Nova's myth pip: a power pip's
+    worth for our own school's spells, as class pips are counted)."""
+    if EffectKind.PIPS not in card.kinds:
+        return normal, power
+    gs, n = card.pip_gain()
+    if n <= 0:
+        return normal, power
+    return (normal, power + n) if gs and gs == school else (normal + n, power)
+
+
+def shadow_left(pool: list[Card], used, battle: Battle) -> int:
+    return battle.shadow_pips - sum(1 for j in used if pool[j].is_shadow)
 
 
 def _pay(card: Card, school: str, normal: int, power: int) -> tuple[int, int] | None:
@@ -2245,10 +2310,14 @@ def _kill_search(battle: Battle, target: Combatant, rounds: int, draws: list[Car
         return min(len(draws), drawn + max(0, hand_size - held))
 
     seen_at: dict = {}  # a position reached already, no later: setups in another order (lookahead)
+    timed = any(c.timed_blade for c in pool) or any(
+        k.startswith(AURA_KEY) for k, _s, _v in me.outgoing_effects)
 
     def search(depth, normal, power, used, out_fx, in_fx, hp, spent, first, steps, drawn=0):
         if deadline is not None and time.monotonic() > deadline:
             raise SearchTimeout
+        if timed:
+            out_fx = expire(out_fx, depth)  # (Frenzy's rounds are over)
         if depth >= rounds and partial is not None:
             # Health left "as the setup up now sees it": blades and traps
             # waiting count for the hit they'll boost (a Feint laid by the
@@ -2290,9 +2359,12 @@ def _kill_search(battle: Battle, target: Combatant, rounds: int, draws: list[Car
                 continue
             if (kind, c.name) in seen:
                 continue  # copies play the same
+            if c.is_shadow and shadow_left(pool, used, battle) <= 0:
+                continue  # (a shadow spell: only with a shadow pip)
             paid = _pay(c, my_school, normal, power)
             if paid is None:
                 continue
+            paid = with_pip_gain(c, my_school, *paid)
             seen.add((kind, c.name))
             school = c.school.lower()
             act = first
@@ -2331,17 +2403,22 @@ def _kill_search(battle: Battle, target: Combatant, rounds: int, draws: list[Car
                 ekind = EffectKind.BLADE if kind == "blade" else EffectKind.TRAP
                 real = me.outgoing_effects if kind == "blade" else target.incoming_effects
                 if _is_duplicate(c, ekind, real, my_school) or any(
-                        k == f"plan:{c.template_id or c.name}" for k, _s, _v in existing):
+                        k == fx_id(c) for k, _s, _v in existing) or (c.timed_blade and aura_up(c, out_fx)):
                     continue  # a copy of one that's up adds nothing (by spell: two Feints stack)
                 if act is None:
                     t = None if (kind == "blade" and c.target is not Target.ENEMY_SINGLE) else target
                     if kind == "blade" and c.target is Target.ALLY_SINGLE:
                         t = me
+                    if c.target is Target.ENEMY_ALL:
+                        t = None  # (on every enemy: the Nova)
                     act = Action(ActionKind.CAST, c, t, reason="")
                 # Each part under its own school (Feint's trap is for every
                 # school, though Feint is a death card).
-                fx = [(f"plan:{c.template_id or c.name}", (e.school or "").lower(), e.value / 100)
-                      for e in c.effects if e.kind is ekind]
+                if kind == "blade" and c.timed_blade:
+                    fx = timed_fx(c, depth)
+                else:
+                    fx = [(fx_id(c), (e.school or "").lower(), e.value / 100)
+                          for e in c.effects if e.kind is ekind]
                 new_out = out_fx + fx if kind == "blade" else out_fx
                 new_in = in_fx + fx if kind == "trap" else in_fx
                 search(depth + 1, *gain(depth, paid[0], paid[1]), used | {i}, new_out, new_in, hp,
@@ -2658,6 +2735,10 @@ def decide(battle: Battle, strat: Strategy | None = None, *, discards_left: int 
     """The action for this step: of two copies of a spell the stronger is
     played (the rules take the first fitting card) and the weaker discarded."""
     battle = replace(battle, cards=strongest_copies_first(battle.cards))
+    try:
+        card_rules(battle)
+    except SearchTimeout:
+        pass
     action = _decide_hand(battle, strat, discards_left=discards_left, plan_discards=plan_discards,
                           odds_discards=odds_discards)
     action = luska_guard(battle, action)
@@ -2979,17 +3060,45 @@ ENCHANT_FIRST = ("orthrus", "humongofrog")
 def _enchant_early(battle: Battle) -> Action | None:
     """A damage enchant in hand onto the first un-enchanted card of
     ENCHANT_FIRST in hand (an enchant doesn't end the turn)."""
+    trap = _trap_enchant(battle)
+    if trap is not None:
+        return trap
     enchants = [c for c in battle.cards
                 if c.castable and c.is_enchant and EffectKind.ENCHANT_DAMAGE in c.kinds]
     if not enchants:
         return None
     for name in ENCHANT_FIRST:
-        hits = [c for c in battle.cards if c.name.lower() == name and c.is_damage and not c.enchanted]
+        # ("Orthrus - T02 - A" too: the name before " - ".)
+        hits = [c for c in battle.cards
+                if c.name.lower().split(" - ")[0].strip() == name and c.is_damage and not c.enchanted]
         if hits:
-            best = max(enchants, key=lambda c: sum(e.value for e in c.effects))
+            # The best enchant by its value (Epic +300 over Colossal +275 over
+            # Gargantuan), whatever it's called.
+            best = max(enchants, key=enchant_value)
             return Action(ActionKind.ENCHANT, best, target_card=hits[0],
                           reason=f"{best.name} on {hits[0].name} now (the hand draws again for it)")
     return None
+
+
+def enchant_value(card: Card) -> float:
+    return sum(e.value for e in card.effects if e.kind is EffectKind.ENCHANT_DAMAGE)
+
+
+def _trap_enchant(battle: Battle) -> Action | None:
+    """Potent Trap onto the biggest un-enchanted trap card in hand (a Feint):
+    the enchanted copy is a bigger trap that stacks with the plain ones."""
+    potent = [c for c in battle.cards if c.castable and c.is_enchant and EffectKind.ENCHANT_TRAP in c.kinds]
+    if not potent:
+        return None
+    mine = (battle.me.school or "").lower()
+    traps = [c for c in battle.cards
+             if is_trap_card(c) and not c.enchanted and not c.banned and not c.is_shadow]
+    if not traps:
+        return None
+    # (A trained copy before an item card's: the item's comes back each fight.)
+    best = max(traps, key=lambda c: (setup_value(c, mine), not c.item))
+    return Action(ActionKind.ENCHANT, potent[0], target_card=best,
+                  reason=f"{potent[0].name} on {best.name} (a bigger trap that stacks)")
 
 
 # Bosses that must take damage every round (the player's cheat notes):
@@ -3192,6 +3301,329 @@ def _last_stand(battle: Battle, action: Action) -> Action | None:
                   reason=f"last stand at {battle.me.health} health: {best.name} now")
 
 
+# --- the Dragonfire deck's specials: Shadow Self Nova, Frenzy, Pierce ---------
+# and holding the last attack until the stacked hit kills everyone.
+
+
+def _rounds_until_affordable(battle: Battle, card: Card, most: int = 12) -> int:
+    """Rounds from now until `card` can be paid (a pip a round); 99 if never within `most`."""
+    school = (battle.me.school or "").lower()
+    for r in range(most + 1):
+        if _pay(card, school, battle.pips + r, battle.power_pips) is not None:
+            return r
+    return 99
+
+
+def _payoff(battle: Battle) -> Card | None:
+    """The big hit the setup is for: the strongest damage card in hand."""
+    hits = [c for c in battle.cards if c.is_damage and not c.banned]
+    return max(hits, key=lambda c: (c.base_damage(), c.pip_cost)) if hits else None
+
+
+def timed_blade_in_reach(battle: Battle, card: Card) -> bool:
+    """Frenzy (+40% for 4 rounds) is worth casting only when the big hit it's
+    for comes within its rounds: cast now, the hit at the earliest next round
+    (else it runs out unused). While the last attack is held for a stacked
+    one-shot, only when the one-shot plan casts it now."""
+    hit = _payoff(battle)
+    if hit is None:
+        return False
+    if must_hold(battle, hit):
+        plan = one_shot_plan(battle, hit)
+        return plan.first is not None and plan.first.card is card
+    return max(1, _rounds_until_affordable(battle, hit)) <= card.timed_blade
+
+
+def _first_ward(e: Combatant) -> tuple[int, tuple[str, str, float]] | None:
+    """The ward a Pierce takes off: the newest shield on it (effects are read newest first)."""
+    for i, eff in enumerate(e.incoming_effects):
+        if eff[2] < 0:
+            return i, eff
+    return None
+
+
+def pierce_target(battle: Battle) -> Combatant | None:
+    """The enemy whose newest shield (a myth or every-school one: Pierce takes
+    the newest ward, whatever its school) keeps our kill out of reach: without
+    it the kill line is shorter by more than the round Pierce takes. Else None:
+    Pierce isn't cast (the player's rule)."""
+    mine = (battle.me.school or "").lower()
+    best = None
+    for e in battle.live_enemies:
+        ward = _first_ward(e)
+        if ward is None or ward[1][1] not in ("", mine):
+            continue
+        i, (_k, _s, v) = ward
+        bare = replace(e, incoming_effects=e.incoming_effects[:i] + e.incoming_effects[i + 1:],
+                       incoming_boost=e.incoming_boost - v, shield_count=max(0, e.shield_count - 1))
+        clean = replace(battle, cards=[c for c in battle.cards if EffectKind.REMOVE_WARD not in c.kinds])
+        with_ward = _kill_search(clean, e, KILL_LOOKAHEAD + 2)
+        without = _kill_search(replace(clean, enemies=[bare if x is e else x for x in battle.enemies]),
+                               bare, KILL_LOOKAHEAD + 1)
+        if without is None:
+            hit = _payoff(battle)
+            # (Past the search: the big hit kills it bare and not shielded.)
+            if hit is None or not (
+                    hit_damage(hit, battle.me, bare) >= e.health > hit_damage(hit, battle.me, e)):
+                continue
+            gain = 1
+        else:
+            gain = (99 if with_ward is None else with_ward[0]) - (without[0] + 1)
+        if gain > 0 and (best is None or (e.is_boss, e.health) > (best.is_boss, best.health)):
+            best = e
+    return best
+
+
+def _pierce_action(battle: Battle) -> Action | None:
+    cards = [c for c in battle.cards if c.castable and EffectKind.REMOVE_WARD in c.kinds and not c.banned]
+    if not cards:
+        return None
+    t = pierce_target(battle)
+    if t is None:
+        return None
+    return Action(ActionKind.CAST, cards[0], t,
+                  reason=f"{cards[0].name}: {t.name}'s shield keeps the kill out of reach")
+
+
+def _nova_action(battle: Battle) -> Action | None:
+    """Shadow Self Nova whenever we hold a shadow pip: +50% traps on every
+    enemy and a myth pip (the player: strong for hit-alls and single hits)."""
+    if battle.shadow_pips < 1:
+        return None
+    novas = [c for c in battle.cards if c.castable and c.is_shadow and not c.banned
+             and EffectKind.TRAP in c.kinds]
+    if not novas:
+        return None
+    c = novas[0]
+    return Action(ActionKind.CAST, c, None if c.target is not Target.ENEMY_SINGLE else battle.live_enemies[0],
+                  reason=f"{c.name}: a shadow pip ({battle.shadow_pips}): traps on every enemy and a pip")
+
+
+def card_rules(battle: Battle) -> Battle:
+    """Castable only when they're worth it (in place): a shadow spell with a
+    shadow pip; Frenzy with the hit it's for in reach; Pierce when a shield
+    keeps the kill out of reach."""
+    for c in battle.cards:
+        if not c.castable:
+            continue
+        if c.is_shadow and battle.shadow_pips < 1:
+            c.castable = False
+        elif c.timed_blade and not c.is_damage and not timed_blade_in_reach(battle, c):
+            c.castable = False
+        elif EffectKind.REMOVE_WARD in c.kinds and pierce_target(battle) is None:
+            c.castable = False
+    return battle
+
+
+@dataclass
+class OneShot:
+    rounds: int  # rounds until the stacked hit lands (ONE_SHOT_ROUNDS when it never kills)
+    kills: bool  # the stacked hit kills every enemy it's aimed at
+    steps: list[str]
+    first: Action | None  # this round's move (a setup, or a pass for pips); None: the hit now
+    damage: dict[str, float]  # the hit's damage per enemy at the end
+
+
+ONE_SHOT_ROUNDS = 14  # how far the stack-everything plan looks (the whole buff pile, then the hit)
+
+
+def _best_enchanted(battle: Battle, hit: Card) -> Card:
+    if hit.enchanted:
+        return hit
+    enchants = [c for c in battle.cards
+                if c.is_enchant and EffectKind.ENCHANT_DAMAGE in c.kinds and not c.banned]
+    if not enchants:
+        return hit
+    from .lookahead import _with_enchant
+
+    return _with_enchant(hit, max(enchants, key=enchant_value))
+
+
+def one_shot_plan(battle: Battle, hit: Card, rounds: int = ONE_SHOT_ROUNDS) -> OneShot:
+    """Stack every blade and trap in hand (and from the deck, one drawn a
+    round) before one hit (with the best enchant): the Nova on a shadow pip,
+    then the biggest setups, Frenzy last (its rounds run out), passing for
+    pips; the hit goes the round it kills every enemy it's aimed at. The
+    6-round plan saw no kill against a 15,000 boss and called it 99 rounds."""
+    me = battle.me
+    school = (me.school or "").lower()
+    big = _best_enchanted(battle, hit)
+    enemies = list(battle.live_enemies)
+    if not enemies:
+        return OneShot(0, True, [], None, {})
+    aimed = enemies if hit.is_aoe else [max(enemies, key=lambda e: (e.is_boss, e.health))]
+    out = list(me.outgoing_effects)
+    ins = {id(e): list(e.incoming_effects) for e in enemies}
+
+    def useful(c: Card) -> bool:
+        return (c is not hit and not c.is_damage and not c.is_enchant and not c.banned
+                and bool({EffectKind.BLADE, EffectKind.TRAP} & c.kinds) and setup_fits(c, battle))
+
+    buffs = [c for c in battle.cards if useful(c)]
+    later = [c for c in battle.upcoming if useful(c)]
+    normal, power, shadow = battle.pips, battle.power_pips, battle.shadow_pips
+    steps: list[str] = []
+    first: Action | None = None
+    dmg: dict[str, float] = {}
+
+    def damage_now() -> dict[int, float]:
+        attacker = replace(me, outgoing_effects=out)
+        return {id(e): hit_damage(big, attacker, replace(e, incoming_effects=ins[id(e)])) for e in aimed}
+
+    for r in range(rounds):
+        out = expire(out, r)
+        d = damage_now()
+        dmg = {e.name: d[id(e)] for e in aimed}
+        if _pay(hit, school, normal, power) is not None and all(d[id(e)] >= e.health for e in aimed):
+            return OneShot(r + 1, True, steps + [f"{hit.name} (~{min(d.values()):.0f})"], first, dmg)
+        choice, on = None, None
+        options = []
+        for c in buffs:
+            if c.is_shadow and shadow < 1:
+                continue
+            if r == 0 and not c.castable:
+                continue  # (this round: only what the game lets us cast)
+            if _pay(c, school, normal, power) is None:
+                continue
+            if EffectKind.TRAP in c.kinds and c.target is not Target.ALLY_SINGLE:
+                spots = aimed if c.target is Target.ENEMY_ALL else [
+                    e for e in aimed if not _is_duplicate(c, EffectKind.TRAP, e.incoming_effects, school)
+                    and not any(k == fx_id(c) for k, _s, _v in ins[id(e)])]
+                if not spots:
+                    continue
+                # (A single trap where the hit falls shortest.)
+                spot = None if c.target is Target.ENEMY_ALL else max(
+                    spots, key=lambda e: e.health / max(1.0, d[id(e)]))
+                options.append((c, spot))
+            elif EffectKind.BLADE in c.kinds:
+                if _is_duplicate(c, EffectKind.BLADE, me.outgoing_effects, school) or any(
+                        k == fx_id(c) for k, _s, _v in out) or (c.timed_blade and aura_up(c, out)):
+                    continue
+                options.append((c, None))
+        nova = [o for o in options if o[0].is_shadow]
+        plain = [o for o in options if not o[0].is_shadow and not o[0].timed_blade]
+        timed = [o for o in options if o[0].timed_blade]
+        if nova:
+            choice, on = nova[0]
+        elif plain:
+            choice, on = max(plain, key=lambda o: (setup_value(o[0], school), -o[0].pip_cost))
+        elif timed:
+            c = timed[0][0]
+            after = _pay(c, school, normal, power)
+            # Only when the hit can follow inside its rounds.
+            reach = next((k for k in range(1, c.timed_blade + 1)
+                          if _pay(hit, school, after[0] + k, after[1]) is not None), None)
+            if reach is not None:
+                choice, on = timed[0]
+        if choice is not None:
+            normal, power = with_pip_gain(choice, school, *_pay(choice, school, normal, power))
+            if choice.is_shadow:
+                shadow -= 1
+            if EffectKind.BLADE in choice.kinds and EffectKind.TRAP not in choice.kinds:
+                out = out + (timed_fx(choice, r) if choice.timed_blade else [
+                    (fx_id(choice), (e.school or "").lower(), e.value / 100)
+                    for e in choice.effects if e.kind is EffectKind.BLADE])
+            else:
+                fx = [(fx_id(choice), (e.school or "").lower(), e.value / 100)
+                      for e in choice.effects if e.kind is EffectKind.TRAP]
+                for e in (aimed if on is None else [on]):
+                    ins[id(e)] = ins[id(e)] + fx
+            buffs = [b for b in buffs if b is not choice]
+            steps.append(choice.name + (f" on {on.name}" if on is not None else ""))
+            if first is None and r == 0:
+                t = on
+                if choice.target is Target.ALLY_SINGLE:
+                    t = me
+                first = Action(ActionKind.CAST, choice, t, reason="")
+        else:
+            steps.append("pass")
+            if first is None and r == 0:
+                first = Action(ActionKind.PASS, reason="")
+        normal += 1  # (a pip a round)
+        if later:
+            buffs.append(later.pop(0))
+    return OneShot(rounds, False, steps, first, dmg)
+
+
+def must_hold(battle: Battle, hit: Card, target: Combatant | None = None) -> bool:
+    """Casting `hit` now (with the best enchant) leaves enemies up that the
+    attacks left in hand and deck can't finish: the last attack card (the
+    Dragonfire deck has one Orthrus) mustn't be spent on the adds alone (it
+    killed Primo and Segundo Ortiz, Clemente Moraga stood at 15,000 with no
+    attack left and the bot fled). Only with the deck known, no teammates and
+    no Reshuffle (which brings the cards back)."""
+    if not hit.is_damage or with_team(battle) or not battle.deck_known:
+        return False
+    if any(is_reshuffle(c) for c in [*battle.cards, *battle.upcoming]):
+        return False
+    big = _best_enchanted(battle, hit)
+    enemies = battle.live_enemies
+    victims = enemies if hit.is_aoe or target is None else [target]
+    left = {id(e): float(e.health) for e in enemies}
+    for e in victims:
+        left[id(e)] -= hit_damage(big, battle.me, e)
+    survivors = [e for e in enemies if left[id(e)] > 0]
+    if not survivors:
+        return False
+    others = [c for c in [*battle.cards, *battle.upcoming] if c.is_damage and c is not hit and not c.banned]
+    if any(o.base_damage() * len(enemies if o.is_aoe else [1]) > hit.base_damage() * len(victims)
+           for o in others):
+        return False  # (a chip hit isn't the one kept: the big one still to come is)
+    finish = sum(max(hit_damage(o, battle.me, s) for s in survivors) * (len(survivors) if o.is_aoe else 1)
+                 for o in others)
+    return finish < sum(left[id(s)] for s in survivors)
+
+
+def hold_last_attack(battle: Battle, action: Action) -> Action | None:
+    """The last attack that wouldn't end the fight (must_hold) is kept: the
+    stack-everything plan's move instead (a blade, trap, Frenzy, the Nova, or
+    a pass for pips) until the stacked hit kills them all. When even the
+    whole stack can't and nothing is left to stack, the hit goes."""
+    card = action.card
+    if action.kind is not ActionKind.CAST or card is None or not card.is_damage:
+        return None
+    if not must_hold(battle, card, action.target):
+        return None
+    plan = one_shot_plan(battle, card)
+    nova = _nova_action(battle)
+    if nova is not None:
+        nova.reason = f"holding {card.name} (the last attack) for a kill: {nova.reason}"
+        return nova
+    if plan.first is None:
+        return None  # (the plan casts the hit now)
+    if plan.first.kind is ActionKind.PASS and not plan.kills and all(s == "pass" for s in plan.steps):
+        return None  # nothing left to stack: the hit goes as it is
+    first = plan.first
+    first.reason = (f"holding {card.name} (the last attack) until it kills every enemy: "
+                    f"{' > '.join(plan.steps[:8])}"
+                    + (f" = {plan.rounds} rounds" if plan.kills else " (no kill even fully stacked)"))
+    return first
+
+
+def specials(battle: Battle, action: Action) -> Action | None:
+    """The last word on a move (also after the whole-deck planner): the last
+    attack is held for a stacked kill; the Nova goes whenever a shadow pip is
+    there; Pierce when a shield keeps the kill out of reach. A heal, a free
+    move (enchant, discard) or a cast that ends the fight stands."""
+    if action.kind in (ActionKind.ENCHANT, ActionKind.DISCARD) or not battle.live_enemies:
+        return None
+    card = action.card
+    if action.kind is ActionKind.CAST and card is not None:
+        if card.is_heal and not card.is_damage:
+            return None
+        if card.is_damage and _kills_all(battle, replace(action, card=_best_enchanted(battle, card))):
+            return None
+        if card.is_shadow or EffectKind.REMOVE_WARD in card.kinds:
+            return None
+    try:
+        hold = hold_last_attack(battle, action)
+        if hold is not None:
+            return hold
+        return _nova_action(battle) or _pierce_action(battle)
+    except SearchTimeout:
+        return None
+
+
 def _decide_seen(battle: Battle, strat: Strategy | None = None, **kw) -> Action:
     battle = _no_single_target(battle)
     early = _enchant_early(battle) or _stun_block_first(battle)
@@ -3239,6 +3671,7 @@ def _decide_seen(battle: Battle, strat: Strategy | None = None, **kw) -> Action:
         action = _crit_gamble(battle, action) or action
     except Exception:
         pass
+    action = specials(battle, action) or action
     if (action.kind is ActionKind.CAST and action.card is not None and action.card.is_damage
             and not action.card.enchanted):
         # The player's: a sun enchant (Giant: +125 base damage) goes on the

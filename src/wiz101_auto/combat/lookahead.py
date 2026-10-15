@@ -272,10 +272,16 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
         _pay,
         _prism_gain,
         _use_up,
+        aura_up,
         block_chance,
         crit_chance,
+        expire,
+        fx_id,
         hit_damage,
         prism_view,
+        shadow_left,
+        timed_fx,
+        with_pip_gain,
     )
     from .model import Target
 
@@ -304,6 +310,7 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
     took = [force is None]  # the forced first move was playable (else it can't be scored)
     partial = [total_hp]  # the least effective health left at the horizon
     seen_at: dict = {}
+    timed = any(c.timed_blade for c in pool)
     hits = _hits_per_round(battle, enemies) if SURVIVAL else None
     prune = SURVIVAL == "prune"
     life = float(me.health)
@@ -321,6 +328,8 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
     def search(depth, normal, power, used, out_fx, in_fx, hps, drawn, prisms, taken):
         if time.monotonic() > deadline:
             raise OutOfTime
+        if timed:
+            out_fx = expire(out_fx, depth)  # (Frenzy's rounds are over)
         if all(h <= 0 for h in hps):
             if depth < best[0] or (depth == best[0] and taken < best_taken[0]):
                 best[0], best_taken[0] = depth, taken
@@ -371,9 +380,12 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
                 kind = "blade"
             else:
                 continue
+            if c.is_shadow and shadow_left(pool, used, battle) <= 0:
+                continue  # (a shadow spell: only with a shadow pip)
             paid = _pay(c, mine, normal, power)
             if paid is None:
                 continue
+            paid = with_pip_gain(c, mine, *paid)
             if named.setdefault(c.name, i) != i:
                 continue  # (copies alike: the first one is the one cast, whether it lands or not)
             if depth == 0:
@@ -399,13 +411,14 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
             school = c.school.lower()
             everyone = c.target is Target.ENEMY_ALL
             if kind == "blade":
-                up = any(k == f"plan:{c.template_id or c.name}" for k, _s, _v in out_fx)
+                up = any(k == fx_id(c) for k, _s, _v in out_fx) or (c.timed_blade and aura_up(c, out_fx))
                 dup = _is_duplicate(c, EffectKind.BLADE, me.outgoing_effects, mine)
                 if (kind, c.name) in tried or up or dup:
                     continue
                 tried.add((kind, c.name))
-                fx = [(f"plan:{c.template_id or c.name}", (e.school or "").lower(), e.value / 100)
-                      for e in c.effects if e.kind is EffectKind.BLADE]
+                fx = timed_fx(c, depth) if c.timed_blade else [
+                    (fx_id(c), (e.school or "").lower(), e.value / 100)
+                    for e in c.effects if e.kind is EffectKind.BLADE]
                 search(depth + 1, *nxt, nused, out_fx + fx, in_fx, hps, ndrawn, prisms, taken)
                 continue
             if kind == "prism":
@@ -427,7 +440,7 @@ def _group_search(battle: Battle, draws: list[Card], gains: list[bool], deadline
                 tried.add(key)
                 hit = live if k is None else [k]
                 if kind == "trap":
-                    fx = [(f"plan:{c.template_id or c.name}", (e.school or "").lower(), e.value / 100)
+                    fx = [(fx_id(c), (e.school or "").lower(), e.value / 100)
                           for e in c.effects if e.kind is EffectKind.TRAP]
                     new_in = list(in_fx)
                     for j in hit:
@@ -654,7 +667,8 @@ def choose(battle: Battle, brain_action: Action | None, power_chance: float, dis
     if brain_action is None or brain_action.kind not in (ActionKind.CAST, ActionKind.PASS):
         return None  # (the brain's discard or enchant: free moves of its own, then it decides again)
     if (brain_action.kind is ActionKind.CAST and brain_action.card is not None
-            and not modeled(brain_action.card)):
+            and (not modeled(brain_action.card) or brain_action.card.is_shadow)):
+        # (The Nova goes whenever a shadow pip is there: the player's rule.)
         return None  # (a prism, heal, shield or stun: the brain knows why; the search can't value it)
     if "move" not in plan:
         deadline = time.monotonic() + budget
@@ -695,7 +709,7 @@ def choose(battle: Battle, brain_action: Action | None, power_chance: float, dis
     else:
         from .model import Target
 
-        target = None if card.is_aoe else tgt
+        target = None if card.is_aoe or card.target in (Target.ENEMY_ALL, Target.SELF) else tgt
         if card.target is Target.ALLY_SINGLE:
             target = battle.me
         action = Action(ActionKind.CAST, card, target, reason=f"lookahead: {card.name} ({s})")

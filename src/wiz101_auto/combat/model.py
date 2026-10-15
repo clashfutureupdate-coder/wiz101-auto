@@ -26,6 +26,8 @@ class EffectKind(Enum):
     PIPS = auto()
     STUN = auto()
     SUMMON = auto()  # minion
+    REMOVE_WARD = auto()  # Pierce: takes the newest ward (shield) off the target
+    ENCHANT_TRAP = auto()  # Potent Trap: +value% onto a trap card in hand
     OTHER = auto()
 
 
@@ -95,6 +97,25 @@ class Card:
     @cached_property
     def is_heal(self) -> bool:
         return bool(self.kinds & HEAL_KINDS)
+
+    @cached_property
+    def is_shadow(self) -> bool:
+        """A shadow spell (Shadow Self Nova, shown as Dark Nova): paid with a
+        shadow pip, not regular pips."""
+        return (self.school or "").lower() == "shadow"
+
+    @cached_property
+    def timed_blade(self) -> int:
+        """Rounds a lasting outgoing boost on us lasts (Frenzy: +40% for 4
+        rounds, an aura not used up by hits); 0 for an ordinary blade."""
+        return max((e.rounds for e in self.effects
+                    if e.kind is EffectKind.BLADE and e.target is Target.SELF and e.rounds > 0), default=0)
+
+    def pip_gain(self) -> tuple[str, int]:
+        """(school, pips) the spell gives us (the Nova: a myth pip)."""
+        n = sum(int(e.value) for e in self.effects if e.kind is EffectKind.PIPS and e.target is Target.SELF)
+        school = next((e.school for e in self.effects if e.kind is EffectKind.PIPS and e.school), "")
+        return school.lower(), n
 
     def base_damage(self) -> float:
         """Total damage per target, before buffs."""
@@ -166,6 +187,7 @@ class Battle:
     cards: list[Card]
     pips: int = 0
     power_pips: int = 0
+    shadow_pips: int = 0  # paid for shadow spells only (Shadow Self Nova)
     # Class (school) pips by school, for the overlay: our own school's are in
     # power_pips (worth 2 for its spells, like power pips), others' in pips.
     school_pips: dict[str, int] = field(default_factory=dict)
@@ -182,6 +204,52 @@ class Battle:
     @property
     def live_allies(self) -> list[Combatant]:
         return [a for a in [self.me, *self.allies] if not a.is_dead]
+
+
+def normalize_card(card: Card) -> Card:
+    """Spells whose effect list, as the game reads, doesn't say what they do
+    (the player's words and the card faces), made into what the brain plans
+    with. Other cards come back as they are.
+
+    - Shadow Self Nova (Dark Nova in the hand; shadow school, a shadow pip):
+      read as OTHER 50 on us for 3 rounds plus a myth pip. It puts a +50%
+      trap on every enemy and gives the myth pip.
+    - Pierce (Myth, 0 pips): read as OTHER 1 on an enemy; its card says
+      "Remove <ward>": one ward (the newest shield) off the target.
+    - Potent Trap (Sun enchant): "+10% to spell", onto a trap card."""
+    name = f"{card.name} {card.template_name}".lower()
+    kinds = card.kinds
+    if card.is_shadow and "nova" in name and EffectKind.TRAP not in kinds:
+        value = next((e.value for e in card.effects if e.kind is EffectKind.OTHER and e.value > 1), 50.0)
+        pips = [e for e in card.effects if e.kind is EffectKind.PIPS] or [
+            Effect(EffectKind.PIPS, Target.SELF, 1, school="myth")]
+        return _remade(card, [Effect(EffectKind.TRAP, Target.ENEMY_ALL, value), *pips])
+    if "pierce" in name and not card.is_enchant and kinds and kinds <= {EffectKind.OTHER}:
+        n = next((e.value for e in card.effects if e.kind is EffectKind.OTHER), 1.0) or 1.0
+        return _remade(card, [Effect(EffectKind.REMOVE_WARD, Target.ENEMY_SINGLE, n)])
+    if "potent trap" in name and EffectKind.ENCHANT_TRAP not in kinds:
+        value = next((e.value for e in card.effects if e.value > 0), 10.0)
+        return _remade(card, [Effect(EffectKind.ENCHANT_TRAP, Target.SPELL, value)])
+    return card
+
+
+def _remade(card: Card, effects: list[Effect]) -> Card:
+    from dataclasses import replace
+
+    return replace(card, effects=effects)  # (a new Card: its cached properties start afresh)
+
+
+def is_trap_card(card: Card) -> bool:
+    return EffectKind.TRAP in card.kinds and not card.is_damage and not card.is_enchant
+
+
+def with_trap_enchant(card: Card, enchant: Card) -> Card:
+    """A trap card with Potent Trap on it: each trap part that much bigger."""
+    extra = sum(e.value for e in enchant.effects if e.kind is EffectKind.ENCHANT_TRAP)
+    from dataclasses import replace
+
+    effects = [replace(e, value=e.value + extra) if e.kind is EffectKind.TRAP else e for e in card.effects]
+    return replace(card, effects=effects, enchanted=True)
 
 
 class ActionKind(Enum):

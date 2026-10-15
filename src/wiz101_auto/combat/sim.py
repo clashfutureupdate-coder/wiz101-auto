@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .brain import (
+    AURA_KEY,
     DISCARD_RESERVE,
     Strategy,
     _is_prism,
@@ -31,13 +32,16 @@ from .brain import (
     block_chance,
     crit_chance,
     decide,
+    expire,
     hit_damage,
     is_reshuffle,
     keep_from_discard,
     prism_view,
     setup_fits,
+    timed_fx,
+    with_pip_gain,
 )
-from .model import Action, ActionKind, Battle, Card, Combatant, Effect, EffectKind, Target
+from .model import Action, ActionKind, Battle, Card, Combatant, Effect, EffectKind, Target, normalize_card
 
 HAND = 7
 ACCURACY = 0.8  # our spells' hit rate when the logs have too few casts of one
@@ -50,6 +54,9 @@ MINION_SHARE_ROUNDS = 10  # rounds with a minion out needed to trust the measure
 PRISM_WORTH = 1.25  # a prism move only where the converted hit lands this much harder
 POWER_PIP_CHANCE = 0.35
 MAX_PIPS = 7
+# A shadow pip at the end of a round (a guess until the logs measure it; the
+# game's rate comes from the shadow pip rating): only for decks with a shadow spell.
+SHADOW_PIP_CHANCE = 0.15
 MAX_ROUNDS = 40
 
 
@@ -119,7 +126,7 @@ def _game_cards() -> dict:
             continue
         if name.lower().startswith("collectessence"):
             continue  # (not a combat spell)
-        c = dataclasses.replace(c, school=(c.school or "").lower())  # 'Myth' -> 'myth', as above
+        c = normalize_card(dataclasses.replace(c, school=(c.school or "").lower()))  # 'Myth' -> 'myth'
         out[name] = (lambda c=c: copy.copy(c))
     return out
 
@@ -255,6 +262,8 @@ class Fight:
     minion_share: float = 0.2  # share of enemy hits our minion takes (measured: stats["minion"])
     log: list | None = None  # a replay's steps (the visualizer); None: not recorded
     hp_seen: list = field(default_factory=list)  # (round, our health): the planner's damage this fight
+    shadow: int = 0  # our shadow pips (Shadow Self Nova)
+    round: int = 0
 
 
 def _note(f: Fight, **step):
@@ -291,8 +300,9 @@ def _snapshot(f: Fight) -> dict:
 
 
 def _use_up(effects: list, school: str) -> list:
-    """A hit of `school` uses each matching blade/trap once."""
-    return [e for e in effects if e[1] not in ("", school)]
+    """A hit of `school` uses each matching blade/trap once (a timed aura,
+    Frenzy, stays its rounds)."""
+    return [e for e in effects if e[1] not in ("", school) or e[0].startswith(AURA_KEY)]
 
 
 def _apply_hit(f: Fight, c: Card, targets: list[Combatant], rng: random.Random):
@@ -344,10 +354,22 @@ def _cast(f: Fight, action, rng: random.Random):
                 f.me.aura[school] = max(f.me.aura.get(school, 0.0), e.value / 100)
     elif EffectKind.HEAL in kinds:
         f.me.health = min(f.me.max_health, f.me.health + int(sum(e.value for e in c.effects)))
+    elif EffectKind.BLADE in kinds and c.timed_blade:
+        f.me.outgoing_effects.extend(timed_fx(c, f.round))  # (Frenzy: its rounds, not one hit)
     elif EffectKind.BLADE in kinds:
         for e in c.effects:
             if e.kind is EffectKind.BLADE:
                 f.me.outgoing_effects.append((_fx_key(c), e.school, e.value / 100))
+    elif EffectKind.TRAP in kinds and c.target is Target.ENEMY_ALL:
+        # (The Nova: a trap on every enemy, and a myth pip.)
+        for t in f.enemies:
+            if not t.is_dead:
+                t.incoming_effects.extend((_fx_key(c), e.school, e.value / 100)
+                                          for e in c.effects if e.kind is EffectKind.TRAP)
+    elif EffectKind.REMOVE_WARD in kinds and action.target:
+        ward = next((x for x in action.target.incoming_effects if x[2] < 0), None)
+        if ward is not None:
+            action.target.incoming_effects.remove(ward)
     elif EffectKind.TRAP in kinds and action.target:
         for e in c.effects:
             if e.kind is EffectKind.TRAP:
@@ -520,9 +542,11 @@ def _round(f: Fight, rng: random.Random, strat: Strategy | None, rnd: int, first
     """Our turn of round `rnd` (the hand already drawn): the brain decides
     (after `first`, a move forced on it: the rollout's candidate), then the
     enemies act and we gain a pip. True once the fight is over."""
+    f.round = rnd
+    f.me.outgoing_effects = expire(f.me.outgoing_effects, rnd)
     for i, c in enumerate(f.hand):
         c.index = i
-        c.castable = _pay(c, "myth", f.pips, f.power) is not None
+        c.castable = _pay(c, "myth", f.pips, f.power) is not None and (not c.is_shadow or f.shadow > 0)
     while True:
         if first is not None:
             action, first = first, None
@@ -530,7 +554,7 @@ def _round(f: Fight, rng: random.Random, strat: Strategy | None, rnd: int, first
             allies = [f.minion] if f.minion and f.minion.health > 0 else []
             b = Battle(me=f.me, allies=allies, enemies=f.enemies, cards=f.hand, pips=f.pips,
                        power_pips=f.power, round=rnd, prismed=set(f.prism_on), summoned=f.summoned,
-                       upcoming=list(f.deck), deck_known=True)
+                       upcoming=list(f.deck), deck_known=True, shadow_pips=f.shadow)
             if not b.live_enemies:
                 return True
             if USE_LOOKAHEAD:
@@ -569,8 +593,11 @@ def _round(f: Fight, rng: random.Random, strat: Strategy | None, rnd: int, first
         cast = False
         if action.kind is ActionKind.CAST and action.card is not None:
             paid = _pay(action.card, "myth", f.pips, f.power)
+            if action.card.is_shadow and f.shadow < 1:
+                paid = None
             if paid is not None:
-                f.pips, f.power = paid
+                f.pips, f.power = with_pip_gain(action.card, "myth", *paid)
+                f.shadow -= action.card.is_shadow
                 _cast(f, action, rng)
                 cast = True
         if f.log is not None:
@@ -597,6 +624,8 @@ def _round(f: Fight, rng: random.Random, strat: Strategy | None, rnd: int, first
         f.power += 1
     else:
         f.pips += 1
+    if any(c.is_shadow for c in [*f.hand, *f.deck]) and rng.random() < SHADOW_PIP_CHANCE:
+        f.shadow += 1
     while f.pips + f.power > MAX_PIPS:
         if f.pips:
             f.pips -= 1
