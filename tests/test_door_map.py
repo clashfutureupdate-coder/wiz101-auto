@@ -21,3 +21,10 @@ def test_quest_finder_never_completed(tmp_path):
     assert t.update({"A"}) == []
     t.log(["Quest Finder"])
     assert not (tmp_path / "done.txt").exists()
+
+
+def test_quest_finder_never_confirmed(tmp_path):
+    from wiz101_auto.questlist import CompletionTracker
+
+    t = CompletionTracker(tmp_path / "done.txt")
+    assert t.confirm({"Quest Finder", "B"}) == ["B"]

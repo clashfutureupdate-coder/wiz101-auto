@@ -132,7 +132,7 @@ class CompletionTracker:
         second full read ('Cor Serpentis': the reads after were partial, inside
         Ruined Alcazar's caves, and it was never logged). Returns the newly
         logged ones."""
-        new = sorted(n for n in names if n and n not in self._logged)
+        new = sorted(n for n in names if n and n not in self._logged and n not in NOT_QUESTS)
         if self._seen is not None:
             self._seen -= set(names)
         self._missing_once -= set(names)
