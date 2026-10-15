@@ -91,11 +91,24 @@ async def area_problem(client) -> bool:
 
 
 CONNECTION_LOST = "connection lost"
+UNREACHABLE = "unable to connect"
 
 
 def is_connection_lost(text: str) -> bool:
     """The game's "ATTENTION / Connection Lost! / RECONNECT, QUIT" box."""
     return CONNECTION_LOST in (text or "").lower()
+
+
+def is_unreachable(text: str) -> bool:
+    """The box after a failed RECONNECT: "Unable to connect to server", QUIT
+    only (04:00: the bot sat behind it, 'battle hasn't progressed', until
+    stopped by hand). Only a game restart gets past it."""
+    return UNREACHABLE in (text or "").lower()
+
+
+async def server_unreachable(client) -> bool:
+    box = await ui.modal_box(client)
+    return box is not None and is_unreachable(await ui.modal_text(box))
 
 
 async def connection_lost(client) -> bool:

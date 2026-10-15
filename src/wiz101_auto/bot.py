@@ -385,13 +385,20 @@ async def status_loop(client, controller: Controller, fighter: Fighter, quester,
         # A frozen game (a loading screen for minutes, the window not
         # responding): the supervisor restarts it and logs back in.
         now = time.monotonic()
+        unreachable = False
         try:
-            from .upkeep import connection_lost
+            from .upkeep import connection_lost, server_unreachable
 
             if await connection_lost(client):
                 await asyncio.sleep(10.0)  # (the reconnect's loading screen)
+            unreachable = await server_unreachable(client)
         except Exception as exc:
             logger.debug(f"connection check failed: {exc!r}")
+        if unreachable:
+            logger.warning("ALERT: 'Unable to connect to server': stopping for a game restart")
+            gamerestart.request("unable to connect to server")
+            controller.stop("unable to connect to server")
+            break
         try:
             loading = await client.is_loading()
         except Exception:
