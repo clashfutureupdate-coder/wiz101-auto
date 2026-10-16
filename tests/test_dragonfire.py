@@ -306,3 +306,12 @@ def test_the_wands_zero_pip_hit_is_banned():
     wand = normalize_card(Card(3, "Minor Scorch", school="fire", pip_cost=0, item=True,
                                effects=[Effect(EffectKind.DAMAGE, Target.ENEMY_SINGLE, 70)]))
     assert wand.banned
+
+
+def test_sharpened_blade_never_on_frenzy():
+    sharp = normalize_card(Card(5, "Sharpened Blade", school="sun", effects=[
+        Effect(EffectKind.ENCHANT_DAMAGE, Target.SPELL, 10)]))
+    frenzy = Card(1, "Frenzy", school="myth", pip_cost=0, template_id=40,
+                  effects=[Effect(EffectKind.BLADE, Target.SELF, 40, school="myth")])
+    b = fight([orthrus(0, castable=False), frenzy, sharp], [enemy("Boss", 15000, boss=True)], pips=2)
+    assert brain._blade_enchant(b) is None

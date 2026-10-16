@@ -748,6 +748,7 @@ def _junk_discard(battle: Battle, strat: Strategy) -> Action | None:
     # still goes.)
     gear = [c for c in battle.cards if c.item and not c.treasure and not c.is_damage and not c.is_heal
             and EffectKind.BLADE not in c.kinds and EffectKind.TRAP not in c.kinds
+            and not c.is_enchant  # (the amulet's Epics wait for an Orthrus: one was binned)
             and not c.name.lower().startswith(KEPT_GEAR)]
     if gear:
         return Action(ActionKind.DISCARD, gear[0], reason="a gear card the plan never plays")
@@ -3155,7 +3156,11 @@ def _blade_enchant(battle: Battle) -> Action | None:
               if is_blade_card(c) and not c.enchanted and not c.banned and not c.is_shadow and not c.item]
     if not blades:
         return None
-    best = max(blades, key=lambda c: ("mythblade" in c.name.lower(), setup_value(c, mine)))
+    # Only the trained Mythblade (the player): Frenzy got it once.
+    blades = [c for c in blades if "mythblade" in c.name.lower()]
+    if not blades:
+        return None
+    best = max(blades, key=lambda c: setup_value(c, mine))
     return Action(ActionKind.ENCHANT, sharp[0], target_card=best,
                   reason=f"{sharp[0].name} on {best.name} (a bigger blade that stacks)")
 
