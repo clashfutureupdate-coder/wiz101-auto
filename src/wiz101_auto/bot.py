@@ -411,8 +411,9 @@ async def status_loop(client, controller: Controller, fighter: Fighter, quester,
         now = time.monotonic()
         unreachable = False
         try:
-            from .upkeep import connection_lost, server_unreachable
+            from .upkeep import connection_lost, decline_chat_invite, server_unreachable
 
+            await decline_chat_invite(client)
             if await connection_lost(client):
                 await asyncio.sleep(10.0)  # (the reconnect's loading screen)
             unreachable = await server_unreachable(client)

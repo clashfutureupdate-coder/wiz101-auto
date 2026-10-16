@@ -90,6 +90,23 @@ async def area_problem(client) -> bool:
     return True
 
 
+def is_chat_invite(text: str) -> bool:
+    """The game's "Chat Channel Invitation: X has invited you to join his chat
+    channel. Do you accept?" box (it sat over a fight in the Vipers Den)."""
+    t = (text or "").lower()
+    return "chat channel" in t and "invited you" in t
+
+
+async def decline_chat_invite(client) -> bool:
+    """Answer No to a chat channel invitation. True if one was up."""
+    box = await ui.modal_box(client)
+    if box is None or not is_chat_invite(await ui.modal_text(box)):
+        return False
+    await ui.press_modal_button(client, box, "rightButton")
+    logger.info("declined a chat channel invitation")
+    return True
+
+
 CONNECTION_LOST = "connection lost"
 UNREACHABLE = "unable to connect"
 
