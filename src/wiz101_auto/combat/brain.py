@@ -1308,6 +1308,18 @@ def _aoe_plan(battle: Battle, strat: Strategy) -> Action | None:
     return Action(ActionKind.CAST, card, None, reason=f"{card.name} on all {len(enemies)}: ~{total:.0f} dmg")
 
 
+# Enchants kept for one card (the player, 2026-10-16: the amulet's two Epics
+# go on Orthrus; one went on Humongofrog with the second Orthrus not drawn yet).
+RESERVED_ENCHANTS = {"epic": "orthrus"}
+
+
+def enchant_allowed(enchant: Card, target: Card) -> bool:
+    """`enchant` may go on `target` (a reserved one only on its card)."""
+    e = enchant.name.lower()
+    t = target.name.lower()
+    return all(card in t for name, card in RESERVED_ENCHANTS.items() if name in e)
+
+
 def _pick_enchant(battle: Battle, attack_card: Card) -> Card | None:
     if attack_card.enchanted:
         return None
@@ -1315,6 +1327,7 @@ def _pick_enchant(battle: Battle, attack_card: Card) -> Card | None:
         c
         for c in _castable(battle.cards)
         if c.is_enchant and EffectKind.ENCHANT_DAMAGE in c.kinds and c is not attack_card
+        and enchant_allowed(c, attack_card)
     ]
     if not enchants:
         return None
@@ -3115,8 +3128,11 @@ def _enchant_early(battle: Battle) -> Action | None:
                 if c.name.lower().split(" - ")[0].strip() == name and c.is_damage and not c.enchanted]
         if hits:
             # The best enchant by its value (Epic +300 over Colossal +275 over
-            # Gargantuan), whatever it's called.
-            best = max(enchants, key=enchant_value)
+            # Gargantuan), whatever it's called; a reserved one only on its card.
+            fit = [c for c in enchants if enchant_allowed(c, hits[0])]
+            if not fit:
+                continue
+            best = max(fit, key=enchant_value)
             return Action(ActionKind.ENCHANT, best, target_card=hits[0],
                           reason=f"{best.name} on {hits[0].name} now (the hand draws again for it)")
     return None
@@ -3490,7 +3506,8 @@ def _best_enchanted(battle: Battle, hit: Card) -> Card:
     if hit.enchanted:
         return hit
     enchants = [c for c in battle.cards
-                if c.is_enchant and EffectKind.ENCHANT_DAMAGE in c.kinds and not c.banned]
+                if c.is_enchant and EffectKind.ENCHANT_DAMAGE in c.kinds and not c.banned
+                and enchant_allowed(c, hit)]
     if not enchants:
         return hit
     from .lookahead import _with_enchant
