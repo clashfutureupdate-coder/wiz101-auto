@@ -188,6 +188,7 @@ class Controller:
             was_pause_down = False
             while True:
                 if _combo_down(self.stop_keys):
+                    self._key_stop = True  # (before the file: the log names the key, not the terminal)
                     try:
                         STOP_FILE.parent.mkdir(exist_ok=True)
                         STOP_FILE.touch()
@@ -219,7 +220,8 @@ class Controller:
         while not self.stopped.is_set():
             ticks += 1
             if ticks % 10 == 0 and STOP_FILE.exists():
-                self.stop("stop requested from the terminal")
+                self.stop("stop key pressed" if getattr(self, "_key_stop", False)
+                          else "stop requested from the terminal")
                 break
             if ticks % 10 == 0:
                 from .control import PAUSE_REQUEST
