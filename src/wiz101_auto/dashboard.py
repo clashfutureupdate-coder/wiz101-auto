@@ -196,7 +196,18 @@ def build_data(docs: Path = Path("docs")) -> dict:
     book_names = [q.get("name", "") for q in book.get("quests", []) if q.get("main")]
     # Where the wizard is: the live zone; while stopped, the world at the last
     # quest-book reading; else the furthest world with a completed quest.
-    here = world_of_zone(status.get("zone", "")) or world_of_zone(book.get("world", ""))
+    # The story's world first: the main quest in the book, else the last one
+    # worked on (state/last_main.json). The live zone moved it to Wizard City
+    # on a potion trip, and with none, a name shared with Novus ('Monkey
+    # Business') put the story there: Novus 64% done.
+    story = [q.get("world", "") for q in book.get("quests", [])
+             if q.get("main") and q.get("world") in WORLDS]
+    try:
+        last_main = json.loads((Path("state") / "last_main.json").read_text(encoding="utf-8")).get("zone", "")
+    except (OSError, ValueError):
+        last_main = ""
+    here = ((max(story, key=WORLDS.index) if story else "") or world_of_zone(last_main)
+            or world_of_zone(status.get("zone", "")) or world_of_zone(book.get("world", "")))
     if not here:
         done_names = {norm(n) for n in completed}
         for name in WORLDS:
