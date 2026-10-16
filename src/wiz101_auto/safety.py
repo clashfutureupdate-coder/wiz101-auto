@@ -12,6 +12,7 @@ import asyncio
 import ctypes
 import sys
 import time
+from pathlib import Path
 
 from loguru import logger
 
@@ -82,6 +83,10 @@ def _combo_down(codes: tuple[int, ...]) -> bool:
     return all(_key_down(c) for c in codes)
 
 
+PAUSED_FILE = Path("state") / "paused.flag"  # the player paused: kept across restarts
+STOP_GRACE = 10.0  # seconds a stop key gets before the process ends outright
+
+
 class Controller:
     def __init__(self, stop_key: str, pause_key: str, max_hours: float):
         self.stop_keys = parse_hotkey(stop_key)
@@ -95,6 +100,11 @@ class Controller:
         self._resume.set()
         self.stop_reason = ""
         self.idle_until = 0.0  # the stall watchdog ignores quiet periods before this
+        if PAUSED_FILE.exists():
+            # Paused before a restart stays paused (a restart for a code change
+            # took the game back from the player mid-play, 2026-10-16).
+            self._resume.clear()
+            logger.warning("still paused (paused before this start): press the pause key to resume")
 
     def allow_idle(self, seconds: float):
         """Declare an intentional quiet period (resting, waiting for respawns...)."""
@@ -147,10 +157,64 @@ class Controller:
         if self.stopped.is_set():
             raise BotStopped(self.stop_reason)
 
+    def set_paused(self, paused: bool, how: str = ""):
+        """Pause or resume; the pause is kept on disk across restarts."""
+        if paused == self.paused:
+            return
+        if paused:
+            self._resume.clear()
+            logger.info(f"paused{how} (press again to resume)")
+            try:
+                PAUSED_FILE.parent.mkdir(exist_ok=True)
+                PAUSED_FILE.touch()
+            except OSError:
+                pass
+        else:
+            self._resume.set()
+            logger.info(f"resumed{how}")
+            PAUSED_FILE.unlink(missing_ok=True)
+
+    def start_key_thread(self, loop: asyncio.AbstractEventLoop):
+        """The stop and pause keys, watched from their own thread: a bot stuck
+        in one long step (13:23, healing before Howling Chaney) never read
+        them, and the player couldn't get the game back. Stop that isn't
+        honoured within STOP_GRACE seconds ends the process outright."""
+        import os
+        import threading
+
+        from .service import STOP_FILE
+
+        def run():
+            was_pause_down = False
+            while True:
+                if _combo_down(self.stop_keys):
+                    try:
+                        STOP_FILE.parent.mkdir(exist_ok=True)
+                        STOP_FILE.touch()
+                    except OSError:
+                        pass
+                    loop.call_soon_threadsafe(self.stop, "stop key pressed")
+                    end = time.monotonic() + STOP_GRACE
+                    while time.monotonic() < end:
+                        time.sleep(0.2)
+                    # Still here: the loop is stuck. Out, whatever the hooks.
+                    try:
+                        logger.error("stop key not honoured in time: ending the bot now "
+                                     "(restart Wizard101 before the next run)")
+                    finally:
+                        os._exit(3)
+                pause_down = _combo_down(self.pause_keys)
+                if pause_down and not was_pause_down:
+                    loop.call_soon_threadsafe(self.set_paused, not self.paused)
+                was_pause_down = pause_down
+                time.sleep(0.05)
+
+        threading.Thread(target=run, name="hotkeys", daemon=True).start()
+
     async def watch(self):
         from .service import STOP_FILE
 
-        was_pause_down = False
+        self.start_key_thread(asyncio.get_running_loop())
         ticks = 0
         while not self.stopped.is_set():
             ticks += 1
@@ -162,31 +226,9 @@ class Controller:
 
                 if PAUSE_REQUEST.exists():  # the control page's pause / resume button
                     PAUSE_REQUEST.unlink(missing_ok=True)
-                    if self.paused:
-                        logger.info("resumed (control page)")
-                        self._resume.set()
-                    else:
-                        logger.info("paused from the control page (press again to resume)")
-                        self._resume.clear()
-            if _combo_down(self.stop_keys):
-                # Also the terminal's stop request: the supervisor then doesn't
-                # restart it (the player's: stopped means stopped until told).
-                try:
-                    STOP_FILE.parent.mkdir(exist_ok=True)
-                    STOP_FILE.touch()
-                except OSError:
-                    pass
-                self.stop("stop key pressed")
-                break
-            pause_down = _combo_down(self.pause_keys)
-            if pause_down and not was_pause_down:
-                if self.paused:
-                    logger.info("resumed")
-                    self._resume.set()
-                else:
-                    logger.info("paused (press again to resume)")
-                    self._resume.clear()
-            was_pause_down = pause_down
+                    self.set_paused(not self.paused, " (control page)")
+            # (The stop and pause keys: start_key_thread. The terminal's stop
+            # request, above, also keeps the supervisor from restarting it.)
             if self.deadline and time.monotonic() > self.deadline:
                 self.stop("max run time reached")
                 break

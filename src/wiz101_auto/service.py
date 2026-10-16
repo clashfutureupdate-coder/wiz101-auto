@@ -80,6 +80,15 @@ def start(config: str, supervise: bool) -> int:
     if pid:
         print(f"already running (PID {pid}). Use 'stop' or 'restart'.")
         return 1
+    orphans = bot_processes()
+    if orphans:
+        print(f"a bot process is already running without a PID file ({', '.join(map(str, orphans))}). "
+              "Use 'stop' first.")
+        return 1
+    from .safety import PAUSED_FILE
+
+    if PAUSED_FILE.exists():
+        print("note: the bot starts paused (paused before); the pause key or the control page resumes it")
     STOP_FILE.unlink(missing_ok=True)
     cmd = [_python(), "-m", "wiz101_auto", "supervise" if supervise else "run", "-c", config]
     flags = 0
@@ -153,12 +162,39 @@ def open_dashboard() -> None:
         print(f"could not start the dashboard: {exc}")
 
 
+def bot_processes() -> list[int]:
+    """PIDs of any bot or supervisor process of this install, found by command
+    line (the PID file can be gone while one still runs: 13:23, a supervisor
+    ending just after the next start deleted it, and `stop` said "not
+    running" while the bot held the game)."""
+    if sys.platform != "win32":
+        return []
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+             "ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }"],
+            capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    pids = []
+    for line in out.splitlines():
+        pid, _, cmd = line.strip().partition(" ")
+        if "wiz101_auto" in cmd and (" run" in cmd or " supervise" in cmd) and pid.isdigit():
+            pids.append(int(pid))
+    return [p for p in pids if p != os.getpid()]
+
+
 def stop(timeout: float = 30.0) -> int:
     pid = running_pid()
     if not pid:
-        print("not running.")
-        PID_FILE.unlink(missing_ok=True)
-        return 0
+        orphans = bot_processes()
+        if not orphans:
+            print("not running.")
+            PID_FILE.unlink(missing_ok=True)
+            return 0
+        pid = orphans[0]
+        print(f"no PID file, but a bot process is running (PID {', '.join(map(str, orphans))})")
     STATE.mkdir(exist_ok=True)
     STOP_FILE.write_text(time.strftime("%Y-%m-%d %H:%M:%S"))
     print(f"asked PID {pid} to stop; waiting for a clean shutdown...", end="", flush=True)
