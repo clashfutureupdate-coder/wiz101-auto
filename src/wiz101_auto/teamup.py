@@ -266,7 +266,8 @@ def beaten_bases() -> set[str]:
         return set()
 
 
-def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = None) -> list[str]:
+def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = None,
+                       done: set[str] = frozenset()) -> list[str]:
     """Added dungeons whose quest is done (no longer in the book) go back to
     solo. The ones dropped. With `seen_before` (the last read's quests): only
     a quest that was in the book then and has left it (Xibalba went on the
@@ -279,7 +280,10 @@ def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = Non
     beaten = beaten_bases()
     gone = [d for d, q in teams.items()
             if q not in open_quests and (seen_before is None or q in seen_before)
-            and _dungeon_base(d) in beaten]
+            and (_dungeon_base(d) in beaten or q in done)]
+    # (`done`: quests the completed log has, gone from memory: done whoever beat
+    # the boss. 'The Silent Sabers', won solo in the Quiet Bungalow, kept it on
+    # the list, and the bot queued for a team there every 3 minutes.)
     if gone:
         for d in gone:
             del teams[d]

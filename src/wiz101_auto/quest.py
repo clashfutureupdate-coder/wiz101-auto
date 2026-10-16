@@ -2418,7 +2418,7 @@ class Quester:
                 # after Ravik, and 'Moon Aria' queued for a team to go in).
                 from .teamup import drop_team_dungeons
 
-                drop_team_dungeons({n.strip() for n in got[0]})
+                drop_team_dungeons({n.strip() for n in got[0]}, done={listed_for})
                 logger.info(f"{listed_for!r} is done: {dungeon.split('/')[-1]} is no team dungeon any more")
                 from .teamup import clear_queue, load_queue
 

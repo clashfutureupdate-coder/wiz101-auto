@@ -12,3 +12,17 @@ def test_start_early_waits_for_four(tmp_path, monkeypatch):
     assert not teamup.early_ok(darkmoor, now=1000.0 + 60)
     assert teamup.early_ok(darkmoor, now=1000.0 + teamup.FULL_TEAM_WAIT)
     assert teamup.early_ok({"dungeon": "Azteca/AZ_Z05_Somewhere", "at": 1000.0}, now=1001.0)
+
+
+def test_drop_done_quest_dungeon_won_solo(tmp_path, monkeypatch):
+    import json
+
+    from wiz101_auto import teamup
+
+    f = tmp_path / "team.json"
+    f.write_text(json.dumps({"Mirage/Interiors/MR_Z02_QuietBungalow": "The Silent Sabers"}))
+    monkeypatch.setattr(teamup, "TEAM_LIST_FILE", f)
+    monkeypatch.setattr(teamup, "beaten_bases", lambda: set())
+    assert teamup.drop_team_dungeons(set()) == []
+    got = teamup.drop_team_dungeons(set(), done={"The Silent Sabers"})
+    assert got == ["Mirage/Interiors/MR_Z02_QuietBungalow"]
