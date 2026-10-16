@@ -3543,7 +3543,13 @@ class Quester:
         memory = DungeonMemory.load()
         fought = self.fighter.last_enemy_names if self.fighter else []
         zone = (getattr(self.controller, "last_death", None) or (0, ""))[1]
-        dungeon = next((memory.bosses[n] for n in fought if n in memory.bosses), None) or (
+        # Where we lost, when that's a dungeon with its own sigil, before
+        # where the boss was first seen: Silent Sabers stand in both the
+        # Sultana's Lounge and the Quiet Bungalow; the Bungalow's losses went on
+        # the Lounge's list, and the bot walked into the Bungalow alone 4 times.
+        here = memory.dungeons.get(zone)
+        dungeon = (zone if here is not None and here.sigil else None) or next(
+            (memory.bosses[n] for n in fought if n in memory.bosses), None) or (
             zone if zone in memory.dungeons else None)
         entry = memory.dungeons.get(dungeon or "")
         if dungeon and (entry is None or not entry.sigil):
