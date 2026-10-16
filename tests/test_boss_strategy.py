@@ -1169,3 +1169,16 @@ def test_rasputin_minions_first():
     assert minions_first(b)
     s = Strategy()
     assert attack_value(frog, b, minion, s) > attack_value(frog, b, rat, s)
+
+
+def test_dead_before(monkeypatch):
+    from wiz101_auto.combat import brain
+    from wiz101_auto.combat.model import Battle, Combatant
+
+    me = Combatant("Me", 4000, 4000, is_enemy=False, resist={})
+    djinn = Combatant("Dunes Djinn", 2480, 2480, is_enemy=True, resist={})
+    b = Battle(me=me, allies=[], enemies=[djinn], cards=[], pips=3, power_pips=0)
+    monkeypatch.setattr(brain, "incoming_per_round", lambda _b: 2500.0)
+    monkeypatch.setattr(brain, "hit_size", lambda _b: 1500.0)
+    assert brain.dead_before(b, 2)
+    assert not brain.dead_before(b, 1)

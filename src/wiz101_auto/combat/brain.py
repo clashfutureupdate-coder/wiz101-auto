@@ -3615,6 +3615,14 @@ def must_hold(battle: Battle, hit: Card, target: Combatant | None = None) -> boo
     return finish < sum(left[id(s)] for s in survivors)
 
 
+def dead_before(battle: Battle, rounds: int) -> bool:
+    """`rounds` more enemy turns, at what they should take off us a round
+    (each one's logged average, or the hardest single hit, whichever is
+    more), would finish us."""
+    per_round = max(incoming_per_round(battle), hit_size(battle))
+    return per_round > 0 and battle.me.health <= per_round * rounds
+
+
 def hold_last_attack(battle: Battle, action: Action) -> Action | None:
     """The last attack that wouldn't end the fight (must_hold) is kept: the
     stack-everything plan's move instead (a blade, trap, Frenzy, the Nova, or
@@ -3634,6 +3642,11 @@ def hold_last_attack(battle: Battle, action: Action) -> Action | None:
         return None  # (the plan casts the hit now)
     if plan.first.kind is ActionKind.PASS and not plan.kills and all(s == "pass" for s in plan.steps):
         return None  # nothing left to stack: the hit goes as it is
+    if plan.kills and plan.rounds > 1 and dead_before(battle, plan.rounds - 1):
+        # (Dunes Djinn: four rounds of blades and Feints, the Feints' own
+        # +30% traps on us, and both hit us from full health to nothing
+        # before Orthrus went, three times in six minutes. Hit now.)
+        return None
     first = plan.first
     first.reason = (f"holding {card.name} (the last attack) until it kills every enemy: "
                     f"{' > '.join(plan.steps[:8])}"
