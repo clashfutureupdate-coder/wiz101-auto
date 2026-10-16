@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import time
 
 from loguru import logger
 from wizwalker import XYZ, Keycode
@@ -51,6 +52,9 @@ def next_kind(boss_here: bool, pickups_left: int, npcs_left: int, switches_tried
     if not switches_tried:
         return "switches"
     return None
+
+
+SUMMON_AGAIN = 300.0  # a summoner used again after this (a fresh copy of the room)
 
 
 class BringOut:
@@ -230,10 +234,14 @@ class BringOut:
 
         used = 0
         for label, pos in await find_switches(self.client, is_summoner):
-            tkey = f"summon@{pos.x:.0f},{pos.y:.0f}"
-            if tkey in done or await self.client.in_battle():
+            tkey = (zone, round(pos.x), round(pos.y))
+            summoned = self.__dict__.setdefault("_summoned", {})
+            # (Again after a while: a defeat or a heal trip out brings a fresh
+            # copy of the cavern, its thumpers unused; kept as "done" for the
+            # objective, the bot talked to Pol Atraydies and set the quest aside.)
+            if time.monotonic() - summoned.get(tkey, -1e9) < SUMMON_AGAIN or await self.client.in_battle():
                 continue
-            done.add(tkey)
+            summoned[tkey] = time.monotonic()
             used += 1
             # (All in one step: one a step, the quest was set aside before the
             # sixth thumper.)
