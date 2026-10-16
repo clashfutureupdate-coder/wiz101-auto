@@ -5612,11 +5612,18 @@ class Quester:
             self._pin_missing = 0
             self._pin_before = None
             self._pin_world = pinned.zone  # (the book's world; .world is its area)
+            self._pin_main = pinned.mainline
         before = getattr(self, "_pin_before", None) or before
         if pinned is None and before:
             # Done: follow the quest line to the quest it handed us ('Quest For
             # Glory' finished at Romulus and the next one began).
             new = [q for q in quests if q.name not in before and q.name not in set_aside]
+            if getattr(self, "_pin_main", False):
+                # A story quest's line goes on only to a story (or class) quest:
+                # 'Return from Ravenwood' handed the pin, through Quest Finder,
+                # to the side quest 'Wild About Saffron' and on to 'Say No to
+                # Feuds', and the story's 'Hassan's Price' waited behind them.
+                new = [q for q in new if q.mainline or q.activity]
             # A quest on its world's story list first (Wysteria's next story
             # quest came with two side quests picked up on the way).
             from .questlist import load_world_lists
