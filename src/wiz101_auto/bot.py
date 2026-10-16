@@ -38,6 +38,7 @@ from .watchdog import Watchdog
 HOOK_TIMEOUT = 90
 CONNECT_TIMEOUT = 300.0  # the whole way into the world (reconnect, Play, hooks)
 DEATH_HEALTH_RATIO = 0.1
+DEFEAT_SENT_OFF_RATIO = 0.5  # sent to another zone after a fight below this: a defeat
 GRIND_SHOWN_SECONDS = 90.0  # the status says "grinding" this long after the last grind step
 DEFEAT_MOVE_DISTANCE = 1500.0  # a defeat puts you back at the zone's start (or another zone)
 
@@ -366,7 +367,14 @@ async def combat_loop(client, fighter: Fighter, cfg: Config, controller: Control
                 # quester Recalls back to its mark in there, as after a defeat.
                 fighter.fled_out_of = fight_zone
             # (Fleeing moves us away too, but isn't a defeat.)
-            if not fighter.fled and (hp <= 1 or (max_hp and hp / max_hp < DEATH_HEALTH_RATIO and moved)):
+            # (Sent to another zone, not by fleeing, on under half health: a
+            # defeat too. Loother Ray's losses at Four Points came back at 27%
+            # in the Mirage hub, weren't counted, and no Team Up followed.)
+            zone_after = await client.zone_name() or ""
+            sent_off = bool(zone_after) and zone_after != fight_zone and not fighter.fled and (
+                max_hp and hp / max_hp < DEFEAT_SENT_OFF_RATIO)
+            if not fighter.fled and (hp <= 1 or sent_off
+                                     or (max_hp and hp / max_hp < DEATH_HEALTH_RATIO and moved)):
                 # Losing a fight sends you back (elsewhere) with a sliver of
                 # health; winning on a sliver leaves you standing where you fought.
                 controller.record_death(fight_zone)
