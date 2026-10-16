@@ -12,3 +12,14 @@ def _no_logged_hit_rates(monkeypatch, tmp_path):
 
     monkeypatch.setattr(lookahead, "RATES_FILE", tmp_path / "no_stats.json")
     monkeypatch.setattr(lookahead, "_RATES", [None, {}])
+
+
+@pytest.fixture(autouse=True)
+def _never_the_real_bot(monkeypatch, tmp_path):
+    # (No test may find or stop the running bot: one did, through the real
+    # stop.request, three times on 2026-10-16, mid-fight.)
+    from wiz101_auto import safety, service
+
+    monkeypatch.setattr(service, "bot_processes", lambda: [])
+    monkeypatch.setattr(service, "STOP_FILE", tmp_path / "stop.request")
+    monkeypatch.setattr(safety, "PAUSED_FILE", tmp_path / "paused.flag")

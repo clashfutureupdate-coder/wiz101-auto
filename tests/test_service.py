@@ -30,7 +30,12 @@ def test_pid_alive_and_running_pid(tmp_path, monkeypatch):
 
 
 def test_stop_when_not_running(tmp_path, monkeypatch):
+    # (Sealed off from the real bot: with only the PID file swapped, stop()
+    # found the running bot by its command line and stopped it, three times.)
     monkeypatch.setattr(service, "PID_FILE", tmp_path / "bot.pid")
+    monkeypatch.setattr(service, "STOP_FILE", tmp_path / "stop.request")
+    monkeypatch.setattr(service, "STATE", tmp_path)
+    monkeypatch.setattr(service, "bot_processes", lambda: [])
     assert service.stop() == 0
 
 
