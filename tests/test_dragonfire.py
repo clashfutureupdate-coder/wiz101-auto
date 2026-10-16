@@ -278,3 +278,31 @@ def test_a_hit_that_isnt_the_last_one_is_not_held():
     assert not brain.must_hold(b, o)
     b.deck_known = False
     assert not brain.must_hold(b, o)  # (the deck unknown: never)
+
+
+def test_sharpened_blade_goes_on_the_trained_mythblade_never_an_item_card():
+    sharp = normalize_card(Card(5, "Sharpened Blade", school="sun", effects=[
+        Effect(EffectKind.ENCHANT_DAMAGE, Target.SPELL, 10)]))
+    assert EffectKind.ENCHANT_BLADE in sharp.kinds and EffectKind.ENCHANT_DAMAGE not in sharp.kinds
+    pet = mythblade(1, tid=31)
+    pet.item = True
+    trained = mythblade(2, tid=30)
+    b = fight([orthrus(0, castable=False), pet, trained, sharp], [enemy("Boss", 15000, boss=True)], pips=2)
+    a = brain._enchant_early(b)
+    assert a.kind is ActionKind.ENCHANT and a.card is sharp and a.target_card is trained
+    only_item = fight([orthrus(0, castable=False), pet, sharp], [enemy("Boss", 15000, boss=True)], pips=2)
+    assert brain._blade_enchant(only_item) is None
+
+
+def test_potent_trap_never_on_an_item_feint():
+    potent = normalize_card(Card(5, "Potent Trap", school="sun", effects=[
+        Effect(EffectKind.ENCHANT_DAMAGE, Target.SPELL, 10)]))
+    boss = enemy("Boss", 15000, boss=True)
+    b = fight([orthrus(0, castable=False), feint(1, 20, item=True), potent], [boss], pips=2)
+    assert brain._trap_enchant(b) is None
+
+
+def test_the_wands_zero_pip_hit_is_banned():
+    wand = normalize_card(Card(3, "Minor Scorch", school="fire", pip_cost=0, item=True,
+                               effects=[Effect(EffectKind.DAMAGE, Target.ENEMY_SINGLE, 70)]))
+    assert wand.banned

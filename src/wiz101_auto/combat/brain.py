@@ -39,6 +39,7 @@ from .model import (
     Effect,
     EffectKind,
     Target,
+    is_blade_card,
     is_trap_card,
 )
 
@@ -1333,9 +1334,9 @@ def _is_duplicate(card: Card, kind: EffectKind, effects: list[tuple[str, str, fl
         # don't (the player: the pet's, Shango's amulet's and the trained
         # Mythblade are three blades of the same size that all stack).
         key = f"spell:{card.template_id}"
-        if card.enchanted and kind is EffectKind.TRAP:
-            # A Potent Trap'd copy stacks with the plain one (the player): a
-            # duplicate only when one just as big is up.
+        if card.enchanted and kind in (EffectKind.TRAP, EffectKind.BLADE):
+            # A Potent Trap'd (Sharpened Blade'd) copy stacks with the plain
+            # one (the player): a duplicate only when one just as big is up.
             size = max((e.value / 100 for e in card.effects if e.kind is kind), default=0.0)
             return any(k == key and abs(v - size) < 0.005 for k, _s, v in effects)
         if any(k == key for k, _s, _v in effects):
@@ -3101,7 +3102,7 @@ ENCHANT_FIRST = ("orthrus", "humongofrog")
 def _enchant_early(battle: Battle) -> Action | None:
     """A damage enchant in hand onto the first un-enchanted card of
     ENCHANT_FIRST in hand (an enchant doesn't end the turn)."""
-    trap = _trap_enchant(battle)
+    trap = _trap_enchant(battle) or _blade_enchant(battle)
     if trap is not None:
         return trap
     enchants = [c for c in battle.cards
@@ -3132,14 +3133,31 @@ def _trap_enchant(battle: Battle) -> Action | None:
     if not potent:
         return None
     mine = (battle.me.school or "").lower()
+    # (Never an item card: enchants can't go on them, the player.)
     traps = [c for c in battle.cards
-             if is_trap_card(c) and not c.enchanted and not c.banned and not c.is_shadow]
+             if is_trap_card(c) and not c.enchanted and not c.banned and not c.is_shadow and not c.item]
     if not traps:
         return None
-    # (A trained copy before an item card's: the item's comes back each fight.)
-    best = max(traps, key=lambda c: (setup_value(c, mine), not c.item))
+    best = max(traps, key=lambda c: setup_value(c, mine))
     return Action(ActionKind.ENCHANT, potent[0], target_card=best,
                   reason=f"{potent[0].name} on {best.name} (a bigger trap that stacks)")
+
+
+def _blade_enchant(battle: Battle) -> Action | None:
+    """Sharpened Blade onto a trained blade in hand (the Mythblade; never an
+    item card): the enchanted copy is a bigger blade that stacks with the
+    plain one, the amulet's and the pet's (four Mythblades, the player)."""
+    sharp = [c for c in battle.cards if c.castable and c.is_enchant and EffectKind.ENCHANT_BLADE in c.kinds]
+    if not sharp:
+        return None
+    mine = (battle.me.school or "").lower()
+    blades = [c for c in battle.cards
+              if is_blade_card(c) and not c.enchanted and not c.banned and not c.is_shadow and not c.item]
+    if not blades:
+        return None
+    best = max(blades, key=lambda c: ("mythblade" in c.name.lower(), setup_value(c, mine)))
+    return Action(ActionKind.ENCHANT, sharp[0], target_card=best,
+                  reason=f"{sharp[0].name} on {best.name} (a bigger blade that stacks)")
 
 
 # Bosses that must take damage every round (the player's cheat notes):

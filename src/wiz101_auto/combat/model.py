@@ -28,6 +28,7 @@ class EffectKind(Enum):
     SUMMON = auto()  # minion
     REMOVE_WARD = auto()  # Pierce: takes the newest ward (shield) off the target
     ENCHANT_TRAP = auto()  # Potent Trap: +value% onto a trap card in hand
+    ENCHANT_BLADE = auto()  # Sharpened Blade: +value% onto a blade card in hand
     OTHER = auto()
 
 
@@ -230,6 +231,16 @@ def normalize_card(card: Card) -> Card:
     if "potent trap" in name and EffectKind.ENCHANT_TRAP not in kinds:
         value = next((e.value for e in card.effects if e.value > 0), 10.0)
         return _remade(card, [Effect(EffectKind.ENCHANT_TRAP, Target.SPELL, value)])
+    if "sharpened blade" in name and EffectKind.ENCHANT_BLADE not in kinds:
+        # (Read as a +10 damage enchant: it would have gone on Orthrus.)
+        value = next((e.value for e in card.effects if e.value > 0), 10.0)
+        return _remade(card, [Effect(EffectKind.ENCHANT_BLADE, Target.SPELL, value)])
+    if card.item and card.is_damage and card.pip_cost == 0 and not card.banned:
+        # The wand's 0-pip hit (the player, 2026-10-16: never; Pierce takes a
+        # shield off instead).
+        from dataclasses import replace
+
+        return replace(card, banned=True)
     return card
 
 
@@ -237,6 +248,10 @@ def _remade(card: Card, effects: list[Effect]) -> Card:
     from dataclasses import replace
 
     return replace(card, effects=effects)  # (a new Card: its cached properties start afresh)
+
+
+def is_blade_card(card: Card) -> bool:
+    return EffectKind.BLADE in card.kinds and not card.is_damage and not card.is_enchant
 
 
 def is_trap_card(card: Card) -> bool:
