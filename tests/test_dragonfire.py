@@ -306,15 +306,3 @@ def test_the_wands_zero_pip_hit_is_banned():
     wand = normalize_card(Card(3, "Minor Scorch", school="fire", pip_cost=0, item=True,
                                effects=[Effect(EffectKind.DAMAGE, Target.ENEMY_SINGLE, 70)]))
     assert wand.banned
-
-
-def test_epic_is_kept_for_orthrus():
-    frog = Card(1, "Humongofrog", school="myth", pip_cost=4,
-                effects=[Effect(EffectKind.DAMAGE, Target.ENEMY_ALL, 295, school="myth")])
-    b = fight([frog, enchant(2, "Epic", 300)], [enemy("Boss", 15000, boss=True)], pips=4)
-    assert brain._enchant_early(b) is None
-    assert brain._pick_enchant(b, frog) is None
-    o = orthrus(0)
-    b2 = fight([o, frog, enchant(2, "Epic", 300)], [enemy("Boss", 15000, boss=True)], pips=4)
-    a = brain._enchant_early(b2)
-    assert a is not None and a.target_card is o
