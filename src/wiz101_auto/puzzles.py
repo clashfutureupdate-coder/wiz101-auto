@@ -46,8 +46,16 @@ def is_switch(name: str) -> bool:
     return any(w in n for w in SWITCH_WORDS)
 
 
-async def find_switches(client) -> list[tuple[str, XYZ]]:
-    """The room's switches: named like one, one per spot, left to right."""
+SUMMON_WORDS = ("thumper",)  # objects used to call a boss up (Melanj, Cavern of the Wurm)
+
+
+def is_summoner(name: str) -> bool:
+    n = (name or "").lower()
+    return any(w in n for w in SUMMON_WORDS)
+
+
+async def find_switches(client, match=is_switch) -> list[tuple[str, XYZ]]:
+    """The room's switches (or what `match` picks): one per spot, left to right."""
     from .names import lang_name
 
     out: list[tuple[str, XYZ]] = []
@@ -58,7 +66,7 @@ async def find_switches(client) -> list[tuple[str, XYZ]]:
                 continue
             code = await t.display_name()
             names = [await t.object_name() or "", await lang_name(client, code) if code else ""]
-            if not any(is_switch(n) for n in names):
+            if not any(match(n) for n in names):
                 continue
             pos = await e.location()
             if any(math.dist((pos.x, pos.y), (p.x, p.y)) < SAME_SWITCH for _, p in out):

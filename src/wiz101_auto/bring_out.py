@@ -223,6 +223,25 @@ class BringOut:
                 if not await self.client.in_battle():
                     await self._mark_for_boss(objective)
                 return True
+        # A boss called up by using things around the room (Melanj in the
+        # Cavern of the Wurm: six thumpers round the marker; the bot stood
+        # there twice and set the main quest aside). Each used once.
+        from .puzzles import _flip, is_summoner
+
+        used = 0
+        for label, pos in await find_switches(self.client, is_summoner):
+            tkey = f"summon@{pos.x:.0f},{pos.y:.0f}"
+            if tkey in done or await self.client.in_battle():
+                continue
+            done.add(tkey)
+            used += 1
+            # (All in one step: one a step, the quest was set aside before the
+            # sixth thumper.)
+            logger.info(f"{name} isn't here yet; using the {label} at ({pos.x:.0f}, {pos.y:.0f})")
+            if not await _flip(self.q, pos):
+                logger.info(f"no prompt at the {label}")
+        if used:
+            return True
         pickups, npcs = await self._scan(done)
         switches = await find_switches(self.client)
         # For a boss that won't spawn, no blind lever flipping: the dungeon's
