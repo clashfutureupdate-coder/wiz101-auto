@@ -3579,6 +3579,10 @@ class Quester:
         """The player's rule: when the main quest can't go on after real
         effort, farm Mount Olympus (waiting for players at the sigil) rather
         than do side quests; farming stays on until the player stops it."""
+        from . import quadlink
+
+        if quadlink.active():
+            return  # (quadbox: the main questline only, never off to farm Mount Olympus)
         farm = Farm.load()
         if farm.active or farm.complete:
             return
@@ -9995,7 +9999,10 @@ class Quester:
             elsewhere = False
         # (Never out of a team dungeon or a dungeon for it: just in with a team
         # for Deep Spawn in the Crab Cave, it left to ask Zaltanna for quests.)
-        if ((self._grinding or elsewhere) and not VISIT_FILE.exists() and self._main_world
+        # (Main story only, accept_side_quests false: no visits for side
+        # quests; it grinds for experience in the main quest's world instead.)
+        if ((self._grinding or elsewhere) and self.cfg.accept_side_quests
+                and not VISIT_FILE.exists() and self._main_world
                 and not accepted_new and not rerank_due and not self._pin
                 and not is_team_up_zone(zone_here) and not await self._in_dungeon(zone_here)
                 and not await self.client.in_battle()):
@@ -10318,7 +10325,10 @@ class Quester:
             return
         # Quests beat grinding for experience: ask the NPCs around first (the
         # next main quest may be waiting with one of them).
-        if not team and await self.givers.ask_nearby():
+        # (Main story only: only while no main-story quest is in the book, i.e.
+        # looking for the next one; otherwise their side quests would be taken.)
+        asking = self.cfg.accept_side_quests or not self._live_mainline()
+        if not team and asking and await self.givers.ask_nearby():
             logger.debug("step: asked an NPC nearby")
             return
         # Grinding comes after healing: right after a defeat it went looking for
