@@ -83,6 +83,41 @@ def _combo_down(codes: tuple[int, ...]) -> bool:
     return all(_key_down(c) for c in codes)
 
 
+GAME_CLASS = "Wizard Graphical Client"  # every Wizard101 window
+OWN_TITLES = ("Quadbox v2", "wiz101-auto")  # the launcher windows and the quest window
+
+
+def needs_focus(codes: tuple[int, ...]) -> bool:
+    """Ctrl plus one key (Ctrl+C, Ctrl+P) is everyday copy/print elsewhere:
+    such a key only counts over the game or our own windows. With Shift or
+    Alt in it (Ctrl+Shift+Q) it counts anywhere, as before."""
+    return MODIFIERS["shift"] not in codes and MODIFIERS["alt"] not in codes
+
+
+def focus_is_ours(class_name: str, title: str) -> bool:
+    return class_name == GAME_CLASS or title.startswith(OWN_TITLES)
+
+
+def _foreground_is_ours() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        title = ctypes.create_unicode_buffer(128)
+        user32.GetWindowTextW(hwnd, title, 128)
+        return focus_is_ours(cls.value, title.value)
+    except Exception:
+        return False
+
+
+def key_pressed(codes: tuple[int, ...]) -> bool:
+    """The hotkey is held, where it counts (see needs_focus)."""
+    return _combo_down(codes) and (not needs_focus(codes) or _foreground_is_ours())
+
+
 PAUSED_FILE = Path("state") / "paused.flag"  # the player paused: kept across restarts
 STOP_GRACE = 10.0  # seconds a stop key gets before the process ends outright
 
@@ -187,7 +222,7 @@ class Controller:
         def run():
             was_pause_down = False
             while True:
-                if _combo_down(self.stop_keys):
+                if key_pressed(self.stop_keys):
                     self._key_stop = True  # (before the file: the log names the key, not the terminal)
                     try:
                         STOP_FILE.parent.mkdir(exist_ok=True)
@@ -204,7 +239,7 @@ class Controller:
                                      "(restart Wizard101 before the next run)")
                     finally:
                         os._exit(3)
-                pause_down = _combo_down(self.pause_keys)
+                pause_down = key_pressed(self.pause_keys)
                 if pause_down and not was_pause_down:
                     loop.call_soon_threadsafe(self.set_paused, not self.paused)
                 was_pause_down = pause_down

@@ -53,7 +53,7 @@ Four accounts on one PC, one bot per game: three wizards quest together and a
 higher-level booster joins their fights. Double-click **`quadbox-v2.bat`** and
 follow **`START HERE.txt`** (friends lists, the questers' names in
 `config.yaml`, saving the logins). Each wizard's files are in `quad\q1`,
-`quad\q2`, `quad\q3` and `quad\booster`. **Ctrl+Shift+Q** stops all four.
+`quad\q2`, `quad\q3` and `quad\booster`. **Ctrl+P** pauses (again to play on) and **Ctrl+C** stops all four, with a game or a Quadbox v2 window in front.
 
 ## Running from a terminal (VS Code)
 

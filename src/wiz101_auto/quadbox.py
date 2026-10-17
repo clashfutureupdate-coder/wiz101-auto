@@ -19,7 +19,7 @@ games were opened.
 
 The bots run detached from this window, each under its own supervisor
 (restarts after crashes, game restarts with the saved logins). The stop key
-(Ctrl+Shift+Q) stops all four; closing this window with the X also asks them
+(Ctrl+C; Ctrl+P pauses) stops all four; closing this window with the X also asks them
 to stop, but the window may close before they finish.
 """
 
@@ -422,7 +422,7 @@ def _prechecks(config: Path) -> str:
 
 
 def run(config: Path) -> int:
-    from .safety import _combo_down, parse_hotkey
+    from .safety import key_pressed, parse_hotkey
     from .service import running_pid
     from .service import stop as stop_single
 
@@ -486,7 +486,7 @@ def run(config: Path) -> int:
                 time.sleep(START_GAP)
             print(f"starting {r} ({names.get(r, 'booster')}) on game {roles[r]}")
             start_bot(r, config)
-    return monitor(config, names, parse_hotkey(cfg.safety.stop_key), _combo_down,
+    return monitor(config, names, parse_hotkey(cfg.safety.stop_key), key_pressed,
                    f"{cfg.safety.stop_key} stops all 4, {cfg.safety.pause_key} pauses")
 
 
@@ -503,6 +503,8 @@ def monitor(config: Path, names: dict, stop_keys, combo_down, keys: str) -> int:
     from .quadlink import keep_awake
 
     keep_awake()
+    if sys.platform == "win32":
+        os.system(f"title {VERSION}")  # (Ctrl+P / Ctrl+C count over this window: safety.needs_focus)
     open_panel(config)
     last_show = 0.0
     while True:

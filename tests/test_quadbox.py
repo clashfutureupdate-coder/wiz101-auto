@@ -270,3 +270,17 @@ def test_main_story_only_and_no_reagents_by_default():
     for preset in ("configs/quadbox.yaml", "configs/myth.yaml"):
         cfg = load_config(preset)
         assert not cfg.quest.accept_side_quests and not cfg.quest.collect_reagents, preset
+
+
+def test_ctrl_p_and_ctrl_c_only_count_over_the_game_or_our_windows():
+    from wiz101_auto.config import load_config
+    from wiz101_auto.safety import focus_is_ours, needs_focus, parse_hotkey
+
+    cfg = load_config("configs/quadbox.yaml")
+    assert (cfg.safety.pause_key, cfg.safety.stop_key) == ("ctrl+p", "ctrl+c")
+    assert needs_focus(parse_hotkey("ctrl+c")) and needs_focus(parse_hotkey("ctrl+p"))
+    assert not needs_focus(parse_hotkey("ctrl+shift+q"))  # (the single bot's: anywhere, as before)
+    assert focus_is_ours("Wizard Graphical Client", "Wizard101")
+    assert focus_is_ours("ConsoleWindowClass", "Quadbox v2 - .venv\\Scripts\\python.exe")
+    assert focus_is_ours("TkTopLevel", "Quadbox v2 - quests")
+    assert not focus_is_ours("Chrome_WidgetWin_1", "Inbox - Gmail")

@@ -33,7 +33,9 @@ Every time
 1. Open all 4 games, log in and stand the wizards in the world. The first time,
    open the questers in q1, q2, q3 order (it remembers them after that).
 2. Double-click quadbox-v2.bat. The first run installs for a few minutes.
-3. Ctrl+Shift+Q stops all 4 and Ctrl+Shift+P pauses. Don't close the window
+3. Ctrl+P pauses all 4 (press Ctrl+P again to play on) and Ctrl+C stops all 4.
+   They work while a Wizard101 window or a Quadbox v2 window is in front (so
+   copying text in your browser never stops the bots). Don't close the window
    with the X.
 
 The quest window opens by itself: a small window on top of the games showing
@@ -104,7 +106,7 @@ within a minute.
 
 Every setting in config.yaml
 ----------------------------
-All four bots read the same config.yaml. Save with Ctrl+S, then stop (Ctrl+Shift+Q)
+All four bots read the same config.yaml. Save with Ctrl+S, then stop (Ctrl+C)
 and start quadbox-v2.bat again for changes to take effect.
 
 mode: quest                     Leave as quest (the booster is set by quadbox).
@@ -130,8 +132,9 @@ upkeep:
   rest_max_minutes: 8           give up healing after this long
 
 safety:
-  stop_key: ctrl+shift+q        stops all 4 (any ctrl/shift/alt combo + one key)
-  pause_key: ctrl+shift+p       pauses / resumes all 4
+  stop_key: ctrl+c              stops all 4 (any ctrl/shift/alt combo + one key;
+                                ctrl + one key only counts over the game or our windows)
+  pause_key: ctrl+p             pauses all 4; again to play on
   stall_seconds: 15             nothing happens this long: close menus, retry, switch quest
   max_hours: 0                  stop after this many hours (0 = run until stopped)
   mouseless: true               the bots click without moving your real mouse

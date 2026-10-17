@@ -133,7 +133,8 @@ echo   [3] Stop all 4
 echo   [4] Show the quest window (opens by itself when quadbox starts)
 echo   [5] Open config.yaml in Notepad
 echo.
-echo   While it runs: Ctrl+Shift+Q = stop all 4, Ctrl+Shift+P = pause/resume
+echo   While it runs: Ctrl+P = pause / play again, Ctrl+C = stop all 4
+echo   ^(with a game or a Quadbox v2 window in front^)
 echo   Don't close the window with the X.
 echo.
 choice /c 12345 /t 8 /d 1 /n /m "Choose 1-5: "

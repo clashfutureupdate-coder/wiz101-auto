@@ -20,8 +20,8 @@ upkeep:
   rest_max_minutes: 8
 
 safety:
-  stop_key: ctrl+shift+q      # stops all 4
-  pause_key: ctrl+shift+p     # pauses / resumes all 4
+  stop_key: ctrl+c            # stops all 4 (over a game or the Quadbox v2 windows)
+  pause_key: ctrl+p           # pauses all 4; press again to play on
   stall_seconds: 15
   max_hours: 0                # 0 = run until stopped
 
