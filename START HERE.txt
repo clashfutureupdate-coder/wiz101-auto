@@ -3,6 +3,7 @@ Quadbox v2 Setup (3 questers + 1 booster)
 
 What you need
 - A Windows PC with Wizard101 and 4 accounts: 3 questers + 1 higher-level booster
+  (or 3 accounts: 2 questers + the booster, with q3: false)
 - Python 3.13 or newer (python.org, tick "Add python.exe to PATH") and Git (git-scm.com)
 
 
@@ -20,6 +21,8 @@ One-time setup
 
      names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}
 
+   Only two questers? Put q3: false, e.g.
+     names: {q1: "Liam Titan", q2: "Alex Vault", q3: false}
    Keep the spaces at the start of the line, then save with Ctrl+S.
    (No config.yaml yet? Run quadbox-v2.bat once and it makes one; menu option 5
    opens it in Notepad.)

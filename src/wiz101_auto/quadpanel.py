@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 
-from .quadbox import ROLES, STALE_HEARTBEAT, _read_json, _state, bot_pid
+from .quadbox import STALE_HEARTBEAT, _read_json, _state, bot_pid, team_roles
 
 REFRESH_MS = 2000
 
@@ -31,7 +31,7 @@ def panel_rows(names: dict, now: float | None = None) -> list[dict]:
     """One row per wizard: the texts the window shows."""
     now = time.time() if now is None else now
     rows = []
-    for r in ROLES:
+    for r in team_roles(names):
         st = _read_json(_state(r) / "status.json")
         running = bool(bot_pid(r))
         beat = float(st.get("time") or 0)
@@ -56,7 +56,8 @@ def panel_rows(names: dict, now: float | None = None) -> list[dict]:
                 objective += f"   ({_age(age)} on it)"
         rows.append({
             "role": r,
-            "name": names.get(r) or ("booster" if r == "booster" else r),
+            "name": (names.get(r) if isinstance(names.get(r), str) else "") or (
+                "booster" if r == "booster" else r),
             "state": state,
             "level": str(st.get("level") or ""),
             "health": str(st.get("health") or ""),
@@ -95,7 +96,7 @@ def run_panel(names: dict) -> int:
     clock.pack(side="right", padx=8)
 
     cards = []
-    for _ in ROLES:
+    for _ in team_roles(names):
         f = tk.Frame(root, bg="white", highlightbackground="#e0e0e0", highlightthickness=1)
         f.pack(fill="x", padx=8, pady=4)
         title = tk.Label(f, font=("Segoe UI", 10, "bold"), bg="white", anchor="w")

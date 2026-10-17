@@ -51,6 +51,18 @@ STALE_HEARTBEAT = 60.0
 PLACEHOLDER_NAMES = {"name one", "name two", "name three", ""}
 
 
+def team_questers(names: dict) -> tuple[str, ...]:
+    """The questers in play: q1 and q2, and q3 when it has a name (`q3: false`,
+    left out or the "Name Three" placeholder: two questers)."""
+    q3 = names.get("q3")
+    has_q3 = isinstance(q3, str) and q3.strip().lower() not in PLACEHOLDER_NAMES
+    return QUESTERS if has_q3 else QUESTERS[:2]
+
+
+def team_roles(names: dict) -> tuple[str, ...]:
+    return (*team_questers(names), "booster")
+
+
 def role_dir(role: str) -> Path:
     return QUAD / role
 
@@ -82,14 +94,14 @@ def _cost(game: Game, seen: dict) -> float:
     return (game.level - level) * 10 + abs(game.max_hp - int(seen.get("max_hp") or 0)) / 50
 
 
-def match_questers(games: list[Game], memory: dict) -> list[Game] | None:
-    """The three questers' games in q1, q2, q3 order, as remembered; None
-    when the memory can't tell (none yet, or two equally likely)."""
-    if not all(memory.get(r) for r in QUESTERS):
+def match_questers(games: list[Game], memory: dict, questers=QUESTERS) -> list[Game] | None:
+    """The questers' games in q1, q2(, q3) order, as remembered; None when
+    the memory can't tell (none yet, or two equally likely)."""
+    if len(games) != len(questers) or not all(memory.get(r) for r in questers):
         return None
     scored = []
     for perm in itertools.permutations(games):
-        cost = sum(_cost(g, memory[r]) for g, r in zip(perm, QUESTERS, strict=True))
+        cost = sum(_cost(g, memory[r]) for g, r in zip(perm, questers, strict=True))
         scored.append((cost, perm))
     scored.sort(key=lambda x: x[0])
     best = scored[0][0]
@@ -100,12 +112,18 @@ def match_questers(games: list[Game], memory: dict) -> list[Game] | None:
     return list(scored[0][1])
 
 
-def assign_roles(games: list[Game], memory: dict) -> tuple[dict[str, int], str]:
-    """{role: pid} for four games, and how the questers were told apart.
-    ValueError (with what to do) when it can't be done."""
-    if len(games) != 4:
-        raise ValueError(f"{len(games)} Wizard101 game(s) are open; quadbox needs exactly 4 "
-                         "(3 questers and the booster), each logged in and standing in the world")
+def need_games_text(questers) -> str:
+    return (f"exactly {len(questers) + 1} ({len(questers)} questers and the booster), each logged in "
+            "and standing in the world")
+
+
+def assign_roles(games: list[Game], memory: dict, questers=QUESTERS) -> tuple[dict[str, int], str]:
+    """{role: pid} for the games (the questers' and the booster's), and how
+    the questers were told apart. ValueError (with what to do) when it can't
+    be done."""
+    if len(games) != len(questers) + 1:
+        raise ValueError(f"{len(games)} Wizard101 game(s) are open; "
+                         f"quadbox needs {need_games_text(questers)}")
     top = max(g.level for g in games)
     highest = [g for g in games if g.level == top]
     if len(highest) == 1:
@@ -115,15 +133,15 @@ def assign_roles(games: list[Game], memory: dict) -> tuple[dict[str, int], str]:
         fits = [g for g in highest if _cost(g, remembered) < float("inf")]
         if len(fits) != 1:
             raise ValueError(f"{len(highest)} wizards are level {top}: the booster must be the "
-                             "highest level of the 4")
+                             "highest level of them all")
         booster = fits[0]
     rest = [g for g in games if g is not booster]
-    order = match_questers(rest, memory)
+    order = match_questers(rest, memory, questers)
     how = "remembered"
     if order is None:
         order = sorted(rest, key=lambda g: (g.started, g.pid))
         how = "the order their games were opened"
-    roles = {r: g.pid for r, g in zip(QUESTERS, order, strict=True)}
+    roles = {r: g.pid for r, g in zip(questers, order, strict=True)}
     roles["booster"] = booster.pid
     return roles, how
 
@@ -146,13 +164,15 @@ def adopt_window(role_pids: dict[str, int], alive: set[int], windows: dict[int, 
 
 def check_names(names: dict) -> str:
     """'' if the questers' names are filled in, else what to fix."""
-    bad = [r for r in QUESTERS if str(names.get(r, "")).strip().lower() in PLACEHOLDER_NAMES]
+    bad = [r for r in ("q1", "q2")
+           if not isinstance(names.get(r), str) or names[r].strip().lower() in PLACEHOLDER_NAMES]
     if not bad:
         return ""
     return ("Put your questers' names in config.yaml first (" + ", ".join(bad) + " missing). At the "
             "bottom, under quadbox:, exactly as the Friends list shows them:\n"
             '  names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}\n'
-            "Keep the spaces at the start of the line, then save with Ctrl+S.")
+            "Only two questers? Put q3: false. Keep the spaces at the start of the line, then save "
+            "with Ctrl+S.")
 
 
 # --- files -----------------------------------------------------------------------
@@ -331,9 +351,9 @@ def ask_stop(roles=ROLES) -> None:
             pass
 
 
-def stop_all(wait: float = STOP_WAIT) -> int:
-    """Stop all four cleanly; 0 if they all did."""
-    running = {r: bot_pid(r) for r in ROLES if bot_pid(r)}
+def stop_all(wait: float = STOP_WAIT, roles=ROLES) -> int:
+    """Stop them all (or `roles`) cleanly; 0 if they all did."""
+    running = {r: bot_pid(r) for r in roles if bot_pid(r)}
     if not running:
         print("no quadbox bots running.")
         return 0
@@ -363,7 +383,7 @@ def stop_all(wait: float = STOP_WAIT) -> int:
 
 def status_lines(names: dict) -> list[str]:
     rows = [f"{'wizard':<9}{'name':<20}{'bot':<10}{'lvl':>4}  {'health':<12}{'zone':<26}doing"]
-    for r in ROLES:
+    for r in team_roles(names):
         st = _read_json(_state(r) / "status.json")
         running = bool(bot_pid(r))
         state = str(st.get("state", "")) if running else "stopped"
@@ -380,7 +400,7 @@ def status_lines(names: dict) -> list[str]:
         doing = "fighting" if st.get("in_battle") else str(st.get("objective") or st.get("reason") or "")
         if r == "booster" and running and not st.get("in_battle"):
             doing = "with the questers"
-        name = names.get(r, "booster" if r == "booster" else "?")
+        name = names.get(r) or ("booster" if r == "booster" else "?")
         rows.append(f"{r:<9}{name[:19]:<20}{state[:9]:<10}{st.get('level', ''):>4}  "
                     f"{str(st.get('health', ''))[:11]:<12}{zone:<26}{doing[:60]}")
     return rows
@@ -392,7 +412,7 @@ def _show(names: dict, keys: str) -> None:
     print("Don't close this window with the X: stop with the stop key.\n")
     print("\n".join(status_lines(names)))
     print()
-    for r in ROLES:
+    for r in team_roles(names):
         last = _tail(role_dir(r) / "activity.log", 1)
         if last:
             print(f"{r:<8} {last[0][:110]}")
@@ -432,6 +452,8 @@ def run(config: Path) -> int:
         return 1
     cfg = _load(config)
     names = dict(cfg.quadbox.names)
+    questers = team_questers(names)
+    team = team_roles(names)
     if running_pid():
         print("the single bot (wiz101.bat) is running: stopping it first")
         stop_single()
@@ -439,20 +461,24 @@ def run(config: Path) -> int:
     SHARED.mkdir(exist_ok=True)
     memory = load_memory()
     windows = game_windows()
-    running = {r for r in ROLES if bot_pid(r)}
+    stray = [r for r in ROLES if r not in team and bot_pid(r)]
+    if stray:
+        print(f"{', '.join(stray)} is running but not in config.yaml's names any more: stopping it")
+        stop_all(roles=stray)
+    running = {r for r in team if bot_pid(r)}
     if running:
         print(f"already running: {', '.join(sorted(running))} (picked up again)")
-    todo = [r for r in ROLES if r not in running]
+    todo = [r for r in team if r not in running]
     if todo:
-        pids = {r: game_pid(r) or int((memory.get(r) or {}).get("pid") or 0) for r in ROLES}
+        pids = {r: game_pid(r) or int((memory.get(r) or {}).get("pid") or 0) for r in team}
         known = {r: p for r, p in pids.items() if p in windows}
-        if len(set(known.values())) == 4:
-            roles = known  # (the same four games as last time)
+        if len(set(known.values())) == len(team) and len(windows) == len(team):
+            roles = known  # (the same games as last time)
         else:
             free = [pid for pid in windows if pid not in {pids[r] for r in running}]
-            if len(free) != len(todo) or len(windows) != 4:
-                print(f"{len(windows)} Wizard101 game(s) are open; quadbox needs exactly 4, each logged "
-                      "in and standing in the world.")
+            if len(free) != len(todo) or len(windows) != len(team):
+                print(f"{len(windows)} Wizard101 game(s) are open; "
+                      f"quadbox needs {need_games_text(questers)}.")
                 return 1
             if running:
                 print("some bots are running and the other games changed: stop them all (quadbox stop) "
@@ -469,12 +495,12 @@ def run(config: Path) -> int:
                 print(f"  game {pid}: level {g.level} {g.school}, {g.max_hp} max health")
                 games.append(g)
             try:
-                roles, how = assign_roles(games, memory)
+                roles, how = assign_roles(games, memory, questers)
             except ValueError as exc:
                 print(exc)
                 return 1
             print(f"booster: game {roles['booster']}; questers by {how}: "
-                  + ", ".join(f"{r} = game {roles[r]}" for r in QUESTERS))
+                  + ", ".join(f"{r} = game {roles[r]}" for r in questers))
             for g in games:
                 r = next(k for k, v in roles.items() if v == g.pid)
                 memory[r] = {"pid": g.pid, "level": g.level, "school": g.school, "max_hp": g.max_hp}
@@ -484,10 +510,10 @@ def run(config: Path) -> int:
         for i, r in enumerate(todo):
             if i:
                 time.sleep(START_GAP)
-            print(f"starting {r} ({names.get(r, 'booster')}) on game {roles[r]}")
+            print(f"starting {r} ({names.get(r) or 'booster'}) on game {roles[r]}")
             start_bot(r, config)
     return monitor(config, names, parse_hotkey(cfg.safety.stop_key), key_pressed,
-                   f"{cfg.safety.stop_key} stops all 4, {cfg.safety.pause_key} pauses")
+                   f"{cfg.safety.stop_key} stops all {len(team)}, {cfg.safety.pause_key} pauses")
 
 
 def monitor(config: Path, names: dict, stop_keys, combo_down, keys: str) -> int:
@@ -509,16 +535,16 @@ def monitor(config: Path, names: dict, stop_keys, combo_down, keys: str) -> int:
     last_show = 0.0
     while True:
         if asked or combo_down(stop_keys):
-            print("\nstop key: stopping all four bots")
+            print("\nstop key: stopping all the bots")
             return stop_all()
         now = time.time()
         if now - last_show >= SHOW_EVERY:
             last_show = now
             try:
-                _keep_up(now)
+                _keep_up(now, team_roles(names))
                 _show(names, keys)
                 if not any(bot_pid(r) for r in ROLES):
-                    print("\nall four bots have stopped.")
+                    print("\nall the bots have stopped.")
                     return 0
             except Exception as exc:
                 # (Never let a hiccup here end the watch over an overnight run:
@@ -556,12 +582,12 @@ def _log(text: str) -> None:
         pass
 
 
-def _keep_up(now: float) -> None:
+def _keep_up(now: float, team: tuple[str, ...] = ROLES) -> None:
     """Hand a re-opened game to the wizard whose game closed, and remember
     each wizard's level as it goes up (for telling them apart next time)."""
     memory = load_memory()
     changed = False
-    for r in ROLES:
+    for r in team:
         st = _read_json(_state(r) / "status.json")
         pid = game_pid(r)
         seen = memory.setdefault(r, {})
@@ -574,7 +600,7 @@ def _keep_up(now: float) -> None:
         if level and level > int(seen.get("level") or 0):
             seen["level"], changed = level, True
     windows = game_windows()
-    hit = adopt_window({r: game_pid(r) for r in ROLES}, set(windows), windows, now)
+    hit = adopt_window({r: game_pid(r) for r in team}, set(windows), windows, now)
     if hit:
         role, pid = hit
         set_game_pid(role, pid)
@@ -600,7 +626,7 @@ def logins() -> int:
     print("Each wizard's login is kept in Windows Credential Manager, for this Windows user only.")
     print("With them saved, a frozen or crashed game is closed, started and logged in by itself.")
     print("Leave the username empty to skip one.\n")
-    for r in ROLES:
+    for r in team_roles(names):
         who = names.get(r) or ("the booster" if r == "booster" else r)
         user = input(f"{r} ({who}) username: ").strip()
         if not user:

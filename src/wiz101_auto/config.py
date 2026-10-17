@@ -195,7 +195,8 @@ def load_config(path: str | Path | None) -> Config:
     if cfg.mode not in ("quest", "fight", "farm", "boss", "boost"):
         raise ValueError(f"mode must be quest, fight, farm or boss, not {cfg.mode!r}")
     names = cfg.quadbox.names
-    if not isinstance(names, dict) or any(not isinstance(v, str) for v in names.values()):
+    if not isinstance(names, dict) or any(not (isinstance(v, str) or v is False or v is None)
+                                          for v in names.values()):
         raise ValueError('quadbox.names should look like {q1: "Name One", q2: "Name Two", q3: "Name Three"}')
     unknown = set(names) - {"q1", "q2", "q3", "booster"}
     if unknown:

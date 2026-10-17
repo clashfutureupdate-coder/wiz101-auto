@@ -81,7 +81,7 @@ def test_a_reopened_game_goes_to_the_wizard_whose_game_closed():
 
 
 def test_names_must_be_filled_in():
-    assert "q2, q3" in check_names({"q1": "Ann Storm", "q2": "Name Two"})
+    assert "q2 missing" in check_names({"q1": "Ann Storm", "q2": "Name Two"})
     assert check_names({"q1": "Ann Storm", "q2": "Bo Fire", "q3": "Cy Ice"}) == ""
 
 
@@ -245,7 +245,8 @@ def test_quest_window_rows(monkeypatch, tmp_path):
     bst = tmp_path / "booster" / "state"
     bst.mkdir(parents=True)
     (bst / "status.json").write_text(json.dumps({"time": now - 2, "state": "running", "in_battle": True}))
-    rows = {r["role"]: r for r in quadpanel.panel_rows({"q1": "Ann Storm"}, now=now)}
+    names = {"q1": "Ann Storm", "q2": "Bo Fire", "q3": "Cy Ice"}
+    rows = {r["role"]: r for r in quadpanel.panel_rows(names, now=now)}
     assert rows["q1"]["name"] == "Ann Storm" and rows["q1"]["state"] == "running"
     assert rows["q1"]["quest"] == "Peace in the Streets"
     assert rows["q1"]["objective"] == "Defeat Rattlebones   (2m on it)"
@@ -284,3 +285,47 @@ def test_ctrl_p_and_ctrl_c_only_count_over_the_game_or_our_windows():
     assert focus_is_ours("ConsoleWindowClass", "Quadbox v2 - .venv\\Scripts\\python.exe")
     assert focus_is_ours("TkTopLevel", "Quadbox v2 - quests")
     assert not focus_is_ours("Chrome_WidgetWin_1", "Inbox - Gmail")
+
+
+# --- two questers (q3: false) ---
+
+def test_two_questers_when_q3_is_off():
+    from wiz101_auto.quadbox import team_questers, team_roles
+
+    two = {"q1": "Liam Titan", "q2": "Alex Vault", "q3": False}
+    assert team_questers(two) == ("q1", "q2") and team_roles(two) == ("q1", "q2", "booster")
+    assert team_questers({"q1": "A", "q2": "B"}) == ("q1", "q2")
+    assert team_questers({"q1": "A", "q2": "B", "q3": "Name Three"}) == ("q1", "q2")
+    assert team_questers({"q1": "A", "q2": "B", "q3": "Cy Ice"}) == ("q1", "q2", "q3")
+    assert check_names(two) == ""
+    assert "q2" in check_names({"q1": "Liam Titan", "q2": False})
+
+
+def test_two_questers_and_the_booster():
+    games = [Game(21, 10.0, 5, "Myth", 949), Game(22, 20.0, 5, "Balance", 1024),
+             Game(23, 5.0, 180, "Storm", 9000)]
+    roles, how = assign_roles(games, {}, ("q1", "q2"))
+    assert roles == {"q1": 21, "q2": 22, "booster": 23} and "order" in how
+    memory = {"q1": {"school": "Balance", "level": 5, "max_hp": 1024},
+              "q2": {"school": "Myth", "level": 5, "max_hp": 949}}
+    roles, how = assign_roles(games, memory, ("q1", "q2"))
+    assert roles == {"q1": 22, "q2": 21, "booster": 23} and how == "remembered"
+    with pytest.raises(ValueError, match="exactly 3"):
+        assign_roles(games + [Game(24, 30.0, 6, "Fire", 900)], {}, ("q1", "q2"))
+
+
+def test_q3_false_in_config(tmp_path):
+    from wiz101_auto.config import load_config
+
+    cfg_file = tmp_path / "c.yaml"
+    cfg_file.write_text('quadbox:\n  names: {q1: "Liam Titan", q2: "Alex Vault", q3: false}\n')
+    assert load_config(cfg_file).quadbox.names["q3"] is False
+
+
+def test_quest_window_shows_only_the_team(monkeypatch, tmp_path):
+    from wiz101_auto import quadpanel
+
+    monkeypatch.setattr(quadbox, "QUAD", tmp_path)
+    monkeypatch.setattr(quadpanel, "bot_pid", lambda r: 0)
+    rows = quadpanel.panel_rows({"q1": "Liam Titan", "q2": "Alex Vault", "q3": False})
+    assert [r["role"] for r in rows] == ["q1", "q2", "booster"]
