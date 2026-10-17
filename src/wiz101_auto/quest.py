@@ -10559,7 +10559,6 @@ class Quester:
         if await self._toward_boss_room(objective, zone or ""):
             return
         if (place and zone and place != zone and "/interiors/" not in zone.lower()
-                and not zone.startswith(place + "_")  # (a part of it: ZruvanGrotto_Ancient)
                 and not await self._in_dungeon(zone)
                 and (gate_toward(zone, place, self._bad_gates) or self.doors.route(zone, place))
                 and self._may_try(objective, zone, "zone_first")):
