@@ -985,6 +985,22 @@ async def recover(client, cfg: UpkeepConfig, controller, go_to_zone=None, trip=N
                 tripped = True
                 if await trip(marked=marked):
                     return True
+            if poor_zone and "/interiors/" in zone.lower():
+                # Never out of a dungeon or room for wisps (the player's rule):
+                # out of the Timeless Center after Vigilant Adapa, all of Zruvan
+                # Grotto was lost. A potion if it's low, then on.
+                if cfg.use_potions and (hp < cfg.potion_health_ratio or mana < cfg.potion_mana_ratio):
+                    try:
+                        charge = await client.stats.potion_charge()
+                    except Exception:
+                        charge = 0.0
+                    if charge >= 1.0:
+                        logger.info(f"no wisps in {zone.split('/')[-1]}: drinking a potion "
+                                    f"({hp:.0%} health, {mana:.0%} mana) instead of leaving")
+                        await ui.click(client, ui.POTION_BUTTON)
+                        await asyncio.sleep(1.5)
+                logger.info(f"no wisps in {zone.split('/')[-1]}; not leaving it: carrying on")
+                return True
             if go_to_zone and not travelled and poor_zone:
                 # No wisps to be had here right now (e.g. the hub after a defeat):
                 # go heal where they spawn instead of waiting for respawns.

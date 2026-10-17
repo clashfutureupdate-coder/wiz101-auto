@@ -7135,6 +7135,17 @@ class Quester:
         world = dest.split("/", 1)[0]
         if await self._to_world(world, f"visit {npc}"):
             return True
+        if zone != dest and await self._npc_named(npc, near=await self._position()) is not None:
+            # Right here, wherever the map last saw them (Vigilant Adapa in the
+            # Timeless Center, remembered in the Tower: the hub button took the
+            # bot out of the dungeon to look for him, and it was lost).
+            dest = zone
+        if zone != dest and await self._in_any_dungeon(zone):
+            # Never out of a dungeon for a visit (the player's rule): it waits.
+            if getattr(self, "_visit_wait_logged", None) != (npc, zone):
+                self._visit_wait_logged = (npc, zone)
+                logger.info(f"visit {npc}: not leaving {zone.split('/')[-1]} for it (a dungeon); later")
+            return False
         if zone != dest:
             from .trainer import DORM, home_to_ravenwood
 
