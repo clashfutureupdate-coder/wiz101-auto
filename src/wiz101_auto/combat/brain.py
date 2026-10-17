@@ -4076,3 +4076,20 @@ def _decide(battle: Battle, strat: Strategy, *, discards_left: int = 2) -> Actio
             return discard
 
     return Action(ActionKind.PASS, reason="saving pips")
+
+
+def aoe_epic(battle) -> Action:
+    """The booster's whole plan (the player: "any<aoe>[epic], that's it"):
+    an AoE attack the game says is castable, with Epic on it when an Epic is
+    in hand, else pass. The biggest AoE (an enchanted one first)."""
+    aoes = [c for c in battle.cards if c.castable and c.is_aoe and not c.banned and not c.is_enchant]
+    if not aoes:
+        return Action(ActionKind.PASS, reason="any<aoe>[epic]: no castable AoE in hand")
+    best = max(aoes, key=lambda c: (c.enchanted, c.pip_cost, -c.index))
+    if not best.enchanted:
+        epic = next((c for c in battle.cards
+                     if c.castable and c.is_enchant and "epic" in c.name.lower()), None)
+        if epic is not None:
+            return Action(ActionKind.ENCHANT, card=epic, target_card=best,
+                          reason=f"any<aoe>[epic]: Epic on {best.name}")
+    return Action(ActionKind.CAST, card=best, reason="any<aoe>[epic]")

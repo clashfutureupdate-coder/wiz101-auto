@@ -444,3 +444,30 @@ def test_questers_fight_together_q1_leads():
     assert fight_leader("q2", mates, "Talk to Private Connelly") is None  # (talks: each their own)
     mates["q1"].state = "paused"
     assert fight_leader("q2", mates, obj) is None  # (a paused leader: on alone)
+
+
+def test_booster_casts_any_aoe_with_epic_on_it():
+    from dataclasses import replace
+
+    from wiz101_auto.combat.brain import aoe_epic
+    from wiz101_auto.combat.model import ActionKind, Battle, Card, Combatant, Effect, EffectKind, Target
+
+    def card(i, name, target, kind=EffectKind.DAMAGE, pips=3, castable=True):
+        return Card(i, name, pip_cost=pips, effects=[Effect(kind, target, 300)], castable=castable)
+
+    tempest = card(0, "Tempest", Target.ENEMY_ALL, pips=3)
+    storm_lord = card(1, "Storm Lord", Target.ENEMY_ALL, pips=7, castable=False)  # (greyed: never)
+    bolt = card(2, "Thunder Snake", Target.ENEMY_SINGLE)
+    epic = card(3, "Epic", Target.SPELL, kind=EffectKind.ENCHANT_DAMAGE, pips=0)
+    me = Combatant("Allan Caster", 10000, 10000, is_client=True)
+    foes = [Combatant("Lost Soul", 300, 300, is_enemy=True)]
+
+    act = aoe_epic(Battle(me=me, allies=[], enemies=foes, cards=[tempest, storm_lord, bolt, epic], pips=7))
+    assert act.kind is ActionKind.ENCHANT and act.card.name == "Epic" and act.target_card.name == "Tempest"
+    enchanted = replace(tempest, enchanted=True)
+    act = aoe_epic(Battle(me=me, allies=[], enemies=foes, cards=[enchanted, bolt], pips=7))
+    assert act.kind is ActionKind.CAST and act.card.name == "Tempest"
+    act = aoe_epic(Battle(me=me, allies=[], enemies=foes, cards=[tempest, bolt], pips=7))
+    assert act.kind is ActionKind.CAST and act.card.name == "Tempest"  # (no Epic: as it is)
+    act = aoe_epic(Battle(me=me, allies=[], enemies=foes, cards=[bolt, storm_lord], pips=7))
+    assert act.kind is ActionKind.PASS

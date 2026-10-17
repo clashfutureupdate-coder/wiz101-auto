@@ -651,7 +651,10 @@ async def run(cfg: Config):
         except Exception as exc:
             logger.debug(f"enemy stats not refreshed: {exc!r}")
         fighter = Fighter(client, c.strategy, max_discards=c.max_discards, flee_below=c.flee_below,
-                          rollouts=c.rollouts)
+                          rollouts=c.rollouts and cfg.mode != "boost")
+        if cfg.mode == "boost":
+            fighter.aoe_epic = True  # (the player: the booster casts any AoE with Epic on it, that's it)
+            logger.info("quadbox: the booster fights with any<aoe>[epic]")
         dialogue = DialoguePolicy()
         adapter = None
         if c.adapt_deck and cfg.mode != "boost":  # (the booster's deck is the player's: never changed)

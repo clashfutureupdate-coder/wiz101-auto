@@ -370,6 +370,7 @@ class Fighter(CombatHandler):
         self.last_bosses: set[str] = set()  # which of them the game marks as bosses
         self.last_team_alive = False  # a teammate standing at the last round read
         self.may_flee = None  # async () -> bool: whether fleeing is allowed here
+        self.aoe_epic = False  # quadbox's booster: only "any<aoe>[epic]" (brain.aoe_epic), nothing else
         self._had_boss = False
         self._items_seen: dict = {}  # template name -> an item card seen in this fight
         self._no_discard: set[str] = set()  # cards whose discard didn't take this fight
@@ -882,6 +883,12 @@ class Fighter(CombatHandler):
                                 plan_discards=False, odds_discards=False)
                 if action.kind is ActionKind.DISCARD:
                     action = Action(ActionKind.PASS, reason=f"no discard ({action.reason})")
+            if self.aoe_epic:
+                # (The booster: an AoE with Epic on it, else pass; nothing the
+                # brain or the simulator would do instead.)
+                from .brain import aoe_epic
+
+                action = aoe_epic(battle)
             if not team or time.monotonic() - getattr(self, "_plan_written", 0.0) > TEAM_PLAN_EVERY:
                 # (The stream's plan card: a whole simulation; in a team fight
                 # once in a while, not before every move.)
