@@ -1,5 +1,5 @@
-Quad Box Setup (3 questers + 1 booster)
-=======================================
+Quadbox v2 Setup (3 questers + 1 booster)
+==========================================
 
 What you need
 - A Windows PC with Wizard101 and 4 accounts: 3 questers + 1 higher-level booster
@@ -21,9 +21,9 @@ One-time setup
      names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}
 
    Keep the spaces at the start of the line, then save with Ctrl+S.
-   (No config.yaml yet? Run quadbox.bat once and it makes one; menu option 4
+   (No config.yaml yet? Run quadbox-v2.bat once and it makes one; menu option 5
    opens it in Notepad.)
-6. Optional: run quadbox.bat and pick [2] to save the questers' logins, so a
+6. Optional: run quadbox-v2.bat and pick [2] to save the questers' logins, so a
    frozen or crashed game restarts by itself. (It asks for the booster's too;
    leave a username empty to skip one.)
 
@@ -32,16 +32,50 @@ Every time
 ----------
 1. Open all 4 games, log in and stand the wizards in the world. The first time,
    open the questers in q1, q2, q3 order (it remembers them after that).
-2. Double-click quadbox.bat. The first run installs for a few minutes.
+2. Double-click quadbox-v2.bat. The first run installs for a few minutes.
 3. Ctrl+Shift+Q stops all 4 and Ctrl+Shift+P pauses. Don't close the window
    with the X.
+
+The quest window opens by itself: a small window on top of the games showing
+each wizard's quest, objective, level, health and zone, and whether it's
+running, fighting or paused (untick "On top" to let it go behind). Closing it
+doesn't stop anything; quadbox-v2.bat option 4 opens it again.
+
+
+Running it from cmd instead of double-clicking
+----------------------------------------------
+Open cmd (Windows key, type cmd, Enter), then:
+
+  cd /d "C:\path\to\wiz101-auto"             (the folder you extracted)
+  quadbox-v2.bat                              (the menu, as when double-clicked)
+
+Or straight to each step, once quadbox-v2.bat has installed the bot:
+
+  .venv\Scripts\python -m wiz101_auto quadbox run -c config.yaml      start all 4
+  .venv\Scripts\python -m wiz101_auto quadbox status                  one line per wizard
+  .venv\Scripts\python -m wiz101_auto quadbox panel                   the quest window
+  .venv\Scripts\python -m wiz101_auto quadbox logins                  save the logins
+  .venv\Scripts\python -m wiz101_auto quadbox stop                    stop all 4 cleanly
+
+
+Overnight
+---------
+- Save the logins first (option 2): then a frozen or crashed game is closed,
+  started and logged back in by itself, one game at a time.
+- The PC is kept from going to sleep while the bots run (the screen may still
+  turn off). Turn off Windows Update restarts for the night if you can
+  (Settings > Windows Update > Pause updates): a restart ends the run.
+- Each bot restarts itself after a crash. If the quadbox window itself is
+  closed, the four bots keep going; run quadbox-v2.bat again to watch them
+  (it picks up the running bots) or to stop them.
+- In the morning, each wizard's log is in quad\<wizard>\activity.log.
 
 
 Tips
 ----
 - Start all 3 questers on the same main quest so they team up.
-- Defaults: main story only, heals under 50% HP, gear checks off. Change them in
-  config.yaml (every setting is listed below).
+- Defaults: main story only, no reagent collecting, heals under 50% HP, gear
+  checks off. Change them in config.yaml (every setting is listed below).
 - If the games lag, set "rollouts: false" under "combat:" in config.yaml.
 
 
@@ -71,13 +105,14 @@ within a minute.
 Every setting in config.yaml
 ----------------------------
 All four bots read the same config.yaml. Save with Ctrl+S, then stop (Ctrl+Shift+Q)
-and start quadbox.bat again for changes to take effect.
+and start quadbox-v2.bat again for changes to take effect.
 
 mode: quest                     Leave as quest (the booster is set by quadbox).
 
 quest:
   teleport: true                false = walk to objectives (slower, looks more human)
   accept_side_quests: false     false = main story only; true = take side quests too
+  collect_reagents: false       true = pick up reagents on the way (chests either way)
   stuck_minutes: 12             no objective change for this long: try something else
   photomancy: true              do the Photomancy (photo) objectives
   flee_unneeded_fights: true    flee fights the quest doesn't need (never bosses)

@@ -156,6 +156,23 @@ def read_mates(folder: Path | None = None, me: str | None = None,
     return mates
 
 
+def keep_awake() -> None:
+    """Keep Windows from going to sleep while this process runs (an overnight
+    run otherwise ends at the PC's sleep timer). The screen may still turn
+    off. Undone by itself when the process ends."""
+    import sys
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+    except Exception as exc:
+        logger.debug(f"quadbox: couldn't keep the PC awake: {exc!r}")
+
+
 def _dist(a, b) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 

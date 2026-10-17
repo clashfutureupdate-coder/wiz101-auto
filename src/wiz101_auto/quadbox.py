@@ -1,4 +1,4 @@
-"""Quadbox: 3 questers and a booster, one bot per game (quadbox.bat).
+"""Quadbox: 3 questers and a booster, one bot per game (quadbox-v2.bat).
 
     wiz101-auto quadbox            start the four bots (or pick up ones still running) and show them
     wiz101-auto quadbox logins     save each wizard's game login (frozen/crashed games restart by themselves)
@@ -37,6 +37,7 @@ from pathlib import Path
 
 from .quadlink import QUESTERS, ROLES
 
+VERSION = "Quadbox v2"
 QUAD = Path("quad")
 SHARED = QUAD / "shared"
 ROLES_FILE = QUAD / "roles.json"
@@ -387,7 +388,7 @@ def status_lines(names: dict) -> list[str]:
 
 def _show(names: dict, keys: str) -> None:
     os.system("cls" if sys.platform == "win32" else "clear")
-    print(f"quadbox  -  {keys}")
+    print(f"{VERSION}  -  {keys}   (quest window: quadbox-v2.bat option 4)")
     print("Don't close this window with the X: stop with the stop key.\n")
     print("\n".join(status_lines(names)))
     print()
@@ -409,7 +410,7 @@ def _prechecks(config: Path) -> str:
     if sys.platform != "win32":
         return "quadbox runs on Windows, next to the four Wizard101 games."
     if not config.exists():
-        return f"{config} not found: run quadbox.bat (it makes one), or copy configs/quadbox.yaml to it"
+        return f"{config} not found: run quadbox-v2.bat (it makes one), or copy configs/quadbox.yaml to it"
     if SPOILER_DLL.exists():
         return (f"Spiral Spoiler's MSIMG32.dll is in {SPOILER_DLL.parent}: move it out of that folder "
                 "(and restart the games) or the bot can't hook into the game.")
@@ -499,6 +500,10 @@ def monitor(config: Path, names: dict, stop_keys, combo_down, keys: str) -> int:
     signal.signal(signal.SIGINT, on_signal)
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, on_signal)  # (the console window's X)
+    from .quadlink import keep_awake
+
+    keep_awake()
+    open_panel(config)
     last_show = 0.0
     while True:
         if asked or combo_down(stop_keys):
@@ -507,12 +512,46 @@ def monitor(config: Path, names: dict, stop_keys, combo_down, keys: str) -> int:
         now = time.time()
         if now - last_show >= SHOW_EVERY:
             last_show = now
-            _keep_up(now)
-            _show(names, keys)
-            if not any(bot_pid(r) for r in ROLES):
-                print("\nall four bots have stopped.")
-                return 0
+            try:
+                _keep_up(now)
+                _show(names, keys)
+                if not any(bot_pid(r) for r in ROLES):
+                    print("\nall four bots have stopped.")
+                    return 0
+            except Exception as exc:
+                # (Never let a hiccup here end the watch over an overnight run:
+                # the bots go on either way; this tries again in a few seconds.)
+                _log(f"monitor: {exc!r}")
         time.sleep(0.1)
+
+
+PANEL_PID = QUAD / "panel.pid"
+
+
+def open_panel(config: Path) -> None:
+    """The quest window (quadpanel.py), in its own process, unless it's open."""
+    try:
+        if _alive(int(PANEL_PID.read_text().strip())):
+            return
+    except (OSError, ValueError):
+        pass
+    try:
+        flags = 0x08000000 if sys.platform == "win32" else 0  # NO_WINDOW (its own window still shows)
+        proc = subprocess.Popen([sys.executable, "-m", "wiz101_auto", "quadbox", "panel", "-c", str(config)],
+                                creationflags=flags, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        PANEL_PID.write_text(str(proc.pid))
+    except OSError as exc:
+        _log(f"could not open the quest window: {exc!r}")
+
+
+def _log(text: str) -> None:
+    try:
+        QUAD.mkdir(exist_ok=True)
+        with (QUAD / "quadbox.log").open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+    except OSError:
+        pass
 
 
 def _keep_up(now: float) -> None:
@@ -576,6 +615,14 @@ def main(action: str, config: str) -> int:
         return logins()
     if action == "stop":
         return stop_all()
+    if action == "panel":
+        from .quadpanel import run_panel
+
+        try:
+            names = dict(_load(path).quadbox.names)
+        except Exception:
+            names = {}
+        return run_panel(names)
     if action == "status":
         try:
             names = dict(_load(path).quadbox.names)

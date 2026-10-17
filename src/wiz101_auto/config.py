@@ -16,8 +16,9 @@ from .deck_plan import DeckPolicy
 class QuestConfig:
     enabled: bool = True
     teleport: bool = True  # teleport to objectives; False = walk (slower, lower detection risk)
-    accept_side_quests: bool = True  # every quest is experience; areas are cleared in order
+    accept_side_quests: bool = False  # main story only (true: side quests too, for the experience)
     photomancy: bool = True
+    collect_reagents: bool = False  # pick up reagents on the way (chests and house items either way)
     # Abort questing if the objective hasn't changed for this long.
     stuck_minutes: float = 12.0
     # Flee fights the tracked quest doesn't need (never bosses or fights indoors).
@@ -130,7 +131,7 @@ class MovementConfig:
 
 @dataclass
 class QuadboxConfig:
-    """Quadbox (quadbox.bat): 3 questers and a higher-level booster, each game
+    """Quadbox (quadbox-v2.bat): 3 questers and a higher-level booster, each game
     with its own bot (quadlink.py). `names`: the questers' names exactly as the
     Friends list shows them (friend teleports go by name)."""
 

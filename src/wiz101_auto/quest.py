@@ -1384,6 +1384,7 @@ class Quester:
         self.lock = asyncio.Lock()  # one step (or watchdog action) at a time
         self._step_task: asyncio.Task | None = None
         self.collector = Collector(client)
+        self.collector.reagents = cfg.collect_reagents
         # Teleports land on known ground (safe_teleport reads this).
         client._ground_points = self._ground_for_teleport
         self.givers = QuestGivers(self)  # talks to named NPCs nearby once, for their quests

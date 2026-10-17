@@ -226,3 +226,47 @@ def test_quadbox_config(tmp_path):
     boost = tmp_path / "boost.yaml"
     boost.write_text("mode: boost\n")
     assert load_config(boost).mode == "boost"
+
+
+# --- v2: the quest window, reagents, main story only ---
+
+def test_quest_window_rows(monkeypatch, tmp_path):
+    from wiz101_auto import quadpanel
+
+    monkeypatch.setattr(quadbox, "QUAD", tmp_path)
+    monkeypatch.setattr(quadpanel, "bot_pid", lambda r: 1 if r != "q3" else 0)
+    now = 1_000_000.0
+    st = tmp_path / "q1" / "state"
+    st.mkdir(parents=True)
+    (st / "status.json").write_text(json.dumps({
+        "time": now - 3, "state": "running", "in_battle": False, "level": 22, "health": "900/1200",
+        "zone": "WizardCity/WC_Streets/WC_Unicorn", "quest": "Peace in the Streets",
+        "objective": "Defeat Rattlebones", "objective_age_s": 125, "objectives_completed": 7, "deaths": 1}))
+    bst = tmp_path / "booster" / "state"
+    bst.mkdir(parents=True)
+    (bst / "status.json").write_text(json.dumps({"time": now - 2, "state": "running", "in_battle": True}))
+    rows = {r["role"]: r for r in quadpanel.panel_rows({"q1": "Ann Storm"}, now=now)}
+    assert rows["q1"]["name"] == "Ann Storm" and rows["q1"]["state"] == "running"
+    assert rows["q1"]["quest"] == "Peace in the Streets"
+    assert rows["q1"]["objective"] == "Defeat Rattlebones   (2m on it)"
+    assert rows["q1"]["zone"] == "WC_Unicorn" and rows["q1"]["done"] == "7"
+    assert rows["q2"]["state"] == "starting"  # (running, no status yet)
+    assert rows["q3"]["state"] == "stopped"
+    assert rows["booster"]["state"] == "fighting" and "booster" in rows["booster"]["quest"]
+
+
+def test_reagents_off_chests_still_on():
+    from wiz101_auto.collect import is_collectable
+
+    assert is_collectable("Parchment") and not is_collectable("Parchment", reagents=False)
+    assert is_collectable("WC-Chest-Common-001", reagents=False)
+    assert is_collectable("COLLECT_Gnome", reagents=False)
+
+
+def test_main_story_only_and_no_reagents_by_default():
+    from wiz101_auto.config import Config, load_config
+
+    assert not Config().quest.accept_side_quests and not Config().quest.collect_reagents
+    for preset in ("configs/quadbox.yaml", "configs/myth.yaml"):
+        cfg = load_config(preset)
+        assert not cfg.quest.accept_side_quests and not cfg.quest.collect_reagents, preset

@@ -204,8 +204,9 @@ _REAGENT_RE = re.compile(r"^(?:[a-z]{2}_)?(" + "|".join(REAGENTS) + r")(?:_?\d+)
 _CHEST_RE = re.compile(r"(^|[-_])chest([-_]|$)")
 
 
-def is_collectable(object_name: str) -> bool:
-    """A free pickup worth a small detour (a reagent, chest or house item)."""
+def is_collectable(object_name: str, reagents: bool = True) -> bool:
+    """A free pickup worth a small detour (a reagent, chest or house item).
+    `reagents` False: chests and house items only (quest.collect_reagents)."""
     name = (object_name or "").strip().lower().replace(" ", "")
     if not name:
         return False
@@ -213,7 +214,8 @@ def is_collectable(object_name: str) -> bool:
         # Locked (MB-Chest-Rare-001): X on it opened the Shockalock lock-picking
         # minigame. Wizard City's rare chests open like any other.
         return False
-    return name.startswith("collect_") or bool(_CHEST_RE.search(name)) or bool(_REAGENT_RE.match(name))
+    return (name.startswith("collect_") or bool(_CHEST_RE.search(name))
+            or (reagents and bool(_REAGENT_RE.match(name))))
 
 
 def away_from(points: list, mobs: list, safe_distance: float) -> list:
@@ -226,6 +228,7 @@ def away_from(points: list, mobs: list, safe_distance: float) -> list:
 
 class Collector:
     def __init__(self, client, safe_distance: float = 700.0):
+        self.reagents = False  # pick up reagents on the way (quest.collect_reagents)
         self.client = client
         self.safe_distance = safe_distance
         self._looted: set[int] = set()  # free pickups already tried (by entity id)
@@ -271,7 +274,7 @@ class Collector:
         for e in await self.client.get_base_entity_list():
             try:
                 template = await e.object_template()
-                if not template or not is_collectable(await template.object_name()):
+                if not template or not is_collectable(await template.object_name(), self.reagents):
                     continue
                 gid = await e.global_id_full()
                 if gid in self._looted:

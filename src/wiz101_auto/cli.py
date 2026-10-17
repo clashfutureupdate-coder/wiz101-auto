@@ -118,8 +118,9 @@ def main(argv: list[str] | None = None):
                              help="save the game login (Windows Credential Manager) for game restarts")
     login_p.add_argument("--role", default="", choices=["", "q1", "q2", "q3", "booster"],
                          help="quadbox: that wizard's login")
-    quad_p = sub.add_parser("quadbox", help="3 questers + 1 booster, one bot per game (quadbox.bat)")
-    quad_p.add_argument("action", nargs="?", default="run", choices=["run", "logins", "status", "stop"])
+    quad_p = sub.add_parser("quadbox", help="3 questers + 1 booster, one bot per game (quadbox-v2.bat)")
+    quad_p.add_argument("action", nargs="?", default="run",
+                        choices=["run", "logins", "status", "stop", "panel"])
     quad_p.add_argument("-c", "--config", default="config.yaml")
     ident_p = sub.add_parser("quad-identify", help=argparse.SUPPRESS)  # (quadbox: one game's wizard, as JSON)
     ident_p.add_argument("--pid", type=int, required=True)

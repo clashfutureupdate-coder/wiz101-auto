@@ -28,7 +28,7 @@ to **run, watch, fix and restart** the bot without the user relaying anything.
 | `pet [--games N]` | (also by itself whenever the wizard's energy is full: `pet.auto`, until the pet reaches its goal stage, `pet.goals` e.g. bloodbat: adult, else `pet.default_goal` mega; `state/pet.json`) the running bot goes to the Pet Pavilion at its next free moment, plays the dance game (moves read from memory) until the pet is out of energy or snacks (or N games), feeds the first snack after each win, then Recalls back (`state/pet.request`) |
 | `pin "Quest"` / `pin` | follow that quest until it's done or set aside / unpin (the main-story quest tracked at start is pinned too; `state/quest_pin.json`) |
 | `stop` | clean stop (unhooks the game); force-kills only after 30s |
-| `quadbox [run\|logins\|status\|stop]` | quadbox.bat: 3 questers + 1 booster, one supervised bot per game in `quad/<role>/` (its own state/ and logs); `stop` stops all four. The single bot's `start`/`stop` never touch quadbox's bots (started with `--role`) |
+| `quadbox [run\|logins\|status\|stop\|panel]` | quadbox-v2.bat: 3 questers + 1 booster, one supervised bot per game in `quad/<role>/` (its own state/ and logs); `stop` stops all four. The single bot's `start`/`stop` never touch quadbox's bots (started with `--role`) |
 | `restart [--supervise]` | stop + start |
 | `status` | running? heartbeat age, zone, objective, health, fights/deaths, last log lines |
 | `logs -n 200` | recent log; `logs -f` follows (blocks, so avoid in automation) |

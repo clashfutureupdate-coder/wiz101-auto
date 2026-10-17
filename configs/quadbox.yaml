@@ -1,11 +1,12 @@
-# Quadbox settings: 3 questers + 1 booster (quadbox.bat copies this to config.yaml).
+# Quadbox settings: 3 questers + 1 booster (quadbox-v2.bat copies this to config.yaml).
 # All four bots read this one file. START HERE.txt explains every setting.
-# Open it in Notepad, change what you like, save with Ctrl+S, then run quadbox.bat again.
+# Open it in Notepad, change what you like, save with Ctrl+S, then run quadbox-v2.bat again.
 mode: quest
 
 quest:
   teleport: true
   accept_side_quests: false   # main story only (true: take side quests too)
+  collect_reagents: false     # don't stop for reagents (true: pick them up on the way)
   stuck_minutes: 12
 
 upkeep:

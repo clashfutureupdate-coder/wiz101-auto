@@ -265,7 +265,7 @@ def restart_game(log=print) -> bool:
     if login is None:
         from .quadlink import role
 
-        how = "quadbox.bat, option 2" if role() else "`wiz101-auto set-login`"
+        how = "quadbox-v2.bat, option 2" if role() else "`wiz101-auto set-login`"
         log(f"game restart: no saved login (run {how} once); can't log back in")
         return False
     with restart_lock(log):

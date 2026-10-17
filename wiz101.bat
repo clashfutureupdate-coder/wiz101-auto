@@ -58,7 +58,7 @@ REM (skipped for commands like "status"/"stop" that manage the running bot)
 if defined HAS_ARGS goto :python
 echo [1/4] Checking for other running copies of the bot...
 REM A bot started from the terminal is stopped cleanly first (unhooks the game).
-REM (Quadbox's bots, started with --role, are left alone: quadbox.bat stops them.)
+REM (Quadbox's bots, started with --role, are left alone: quadbox-v2.bat stops them.)
 if exist ".venv\Scripts\python.exe" if exist state\bot.pid (
   ".venv\Scripts\python.exe" -m wiz101_auto stop
 )

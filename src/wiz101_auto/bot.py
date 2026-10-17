@@ -477,6 +477,7 @@ async def status_loop(client, controller: Controller, fighter: Fighter, quester,
             }
         if quester:
             info.update(
+                quest=quester._active_quest or "",
                 objective=quester._last_progress[0],
                 objective_age_s=int(time.monotonic() - quester._last_progress_time),
                 objectives_completed=quester.objectives_completed,
@@ -593,6 +594,7 @@ async def run(cfg: Config):
                         "wizard's own")
             cfg.progression.school = ""
         logger.info(f"quadbox: playing as {quadlink.role()}")
+        quadlink.keep_awake()  # (overnight: the PC's sleep timer would end the run)
     s = cfg.safety
     controller = Controller(s.stop_key, s.pause_key, s.max_hours)
     logger.info(f"mode={cfg.mode}; {s.stop_key}=stop, {s.pause_key}=pause/resume")

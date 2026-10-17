@@ -1,11 +1,11 @@
 @echo off
 setlocal EnableExtensions
-title wiz101-auto quadbox
+title Quadbox v2
 cd /d "%~dp0"
 if not exist state mkdir state
 
 echo ============================================================
-echo   wiz101-auto quadbox  (3 questers + 1 booster)
+echo   Quadbox v2  (3 questers + 1 booster)
 echo ============================================================
 echo.
 
@@ -122,18 +122,20 @@ echo.
 echo   [1] Start quadbox                    (starts automatically in 8 seconds)
 echo   [2] Save the logins   - a frozen or crashed game then restarts by itself
 echo   [3] Stop all 4
-echo   [4] Open config.yaml in Notepad
+echo   [4] Show the quest window (opens by itself when quadbox starts)
+echo   [5] Open config.yaml in Notepad
 echo.
 echo   While it runs: Ctrl+Shift+Q = stop all 4, Ctrl+Shift+P = pause/resume
 echo   Don't close the window with the X.
 echo.
-choice /c 1234 /t 8 /d 1 /n /m "Choose 1-4: "
+choice /c 12345 /t 8 /d 1 /n /m "Choose 1-5: "
 set "CHOICE=%errorlevel%"
 echo.
 if "%CHOICE%"=="1" goto :run
 if "%CHOICE%"=="2" goto :logins
 if "%CHOICE%"=="3" goto :stop
-if "%CHOICE%"=="4" goto :edit
+if "%CHOICE%"=="4" goto :panel
+if "%CHOICE%"=="5" goto :edit
 goto :done
 
 :run
@@ -147,6 +149,10 @@ goto :done
 :stop
 %BOT% quadbox stop
 goto :done
+
+:panel
+start "" .venv\Scripts\pythonw.exe -m wiz101_auto quadbox panel -c config.yaml
+exit /b 0
 
 :edit
 start "" notepad config.yaml
