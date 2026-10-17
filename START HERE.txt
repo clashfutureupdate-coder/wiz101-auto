@@ -108,7 +108,7 @@ Stays on track
   when stuck (it fights for experience in the main quest's world instead).
 - 90 seconds on the same objective with the quest arrow far off: it follows
   the arrow.
-- No pet dance, gear check or trainer trips.
+- No pet dance, gear check, trainer or treasure-chest trips.
 
 booster      Never quests. Joins any quester's fight, answers calls for
              backup, otherwise stays with q1. Its deck is left as you built it.
@@ -197,6 +197,7 @@ quadbox:
   join_range: 0                 ... this close, in the same zone (0 = anywhere in it)
   friend_teleports: true        into a teammate's dungeon, and the booster to the questers
   trainer_trips: false          true = go to the school professor to train new spells
+  chests: false                 true = detour to open treasure chests on the way
   pet_trips: false              true = go train the pet at the Pet Pavilion whenever energy
                                 is full (off: the main quest only)
   names: {q1: "...", q2: "...", q3: "..."}

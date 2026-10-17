@@ -694,6 +694,8 @@ async def run(cfg: Config):
                 quester.trainer = SpellTrainer(quester, progression, cfg.progression.train_levels)
             elif quadlink.active():
                 logger.info("quadbox: no trainer trips (quadbox.trainer_trips: false)")
+            if quadlink.active() and not cfg.quadbox.chests:
+                quester.collector.chests = False  # (no detours for chests: the main quest only)
             quester.healer = DungeonHealer(quester, cfg.upkeep)
             quester.pet = PetDancer(quester, cfg.pet)
             quester.potions = PotionShopper(quester, cfg.upkeep.use_potions and cfg.upkeep.buy_potions)

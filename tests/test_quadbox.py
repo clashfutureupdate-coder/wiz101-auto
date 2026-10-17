@@ -419,3 +419,12 @@ def test_quest_window_shows_the_story_place(monkeypatch, tmp_path):
     row = quadpanel.panel_rows({"q1": "Liam Titan", "q2": "Alex Vault", "q3": False}, now=now)[0]
     assert row["story_line"] == "Wizard City  ·  Quest 3 of 38" and abs(row["story_frac"] - 3 / 38) < 1e-9
     assert row["health_frac"] == 0.75 and "helping" in row["note"]
+
+
+def test_no_chest_detours_in_quadbox():
+    from wiz101_auto.collect import is_collectable
+    from wiz101_auto.config import Config
+
+    assert not Config().quadbox.chests
+    assert not is_collectable("WC-Chest-Common-001", reagents=False, chests=False)
+    assert is_collectable("COLLECT_Gnome", reagents=False, chests=False)

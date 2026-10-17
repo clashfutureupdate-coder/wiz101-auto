@@ -142,6 +142,7 @@ class QuadboxConfig:
     friend_teleports: bool = True  # into a teammate's dungeon / to a quester in another zone
     pet_trips: bool = False  # Pet Pavilion trips when energy is full (pet.auto); off: the main quest only
     trainer_trips: bool = False  # trips to the school professor to train spells
+    chests: bool = False  # detours to open treasure chests on the way
 
 
 @dataclass

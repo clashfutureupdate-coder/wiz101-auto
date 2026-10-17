@@ -49,5 +49,6 @@ quadbox:
   friend_teleports: true      # into a teammate's dungeon, and the booster to the questers
   pet_trips: false            # true: train the pet at the Pet Pavilion whenever energy is full
   trainer_trips: false        # true: go to the school professor to train new spells
+  chests: false               # true: open treasure chests on the way
   # Your questers' names exactly as the Friends list shows them (only two? q3: false):
   names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}
