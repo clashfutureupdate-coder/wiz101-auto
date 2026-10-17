@@ -11,6 +11,7 @@ from collections import Counter
 from pathlib import Path
 
 from loguru import logger
+from wizwalker import Keycode
 from wizwalker.combat import CombatHandler
 
 from .. import ui
@@ -792,6 +793,15 @@ class Fighter(CombatHandler):
                     logger.warning(f"discarding {name} didn't work; no more discards this round, "
                                    f"and never {name} again this fight")
 
+            if not battle.cards and battle.upcoming and self.__dict__.get("_empty_fixed") != battle.round:
+                # No hand read with cards still to draw: a card left picked up
+                # after a cast that didn't take (Eerkala, with a team: four
+                # rounds passed on "hand: ;"). Esc puts it back; read again.
+                self._empty_fixed = battle.round
+                logger.warning("no cards read in hand: Esc to drop a picked-up card, then reading again")
+                await self.client.send_key(Keycode.ESC, 0.1)
+                await asyncio.sleep(0.8)
+                continue
             _note_unknown_cards(battle)
             self.last_team_alive = any(not a.is_minion and not a.is_dead for a in battle.allies)
             hand = ", ".join(f"{c.name}{'' if c.castable else '(x)'}" for c in battle.cards)
