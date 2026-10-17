@@ -2,6 +2,26 @@
 setlocal EnableExtensions
 title Quadbox v2
 cd /d "%~dp0"
+
+REM ---- Run as administrator --------------------------------------------------
+REM Hooking the games' memory can fail without it. Not elevated yet: ask Windows
+REM (the "allow changes" prompt) and run this file again as administrator.
+net session >nul 2>&1
+if not errorlevel 1 goto :admin
+echo Quadbox v2 needs to run as administrator; asking Windows...
+if "%~1"=="" (
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs" >nul 2>&1
+) else (
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs" >nul 2>&1
+)
+if errorlevel 1 (
+  echo.
+  echo Windows didn't allow it. Right-click quadbox-v2.bat and choose
+  echo "Run as administrator" instead.
+  pause
+)
+exit /b
+:admin
 if not exist state mkdir state
 
 echo ============================================================

@@ -32,7 +32,8 @@ Every time
 ----------
 1. Open all 4 games, log in and stand the wizards in the world. The first time,
    open the questers in q1, q2, q3 order (it remembers them after that).
-2. Double-click quadbox-v2.bat. The first run installs for a few minutes.
+2. Double-click quadbox-v2.bat and say Yes when Windows asks to allow changes
+   (it runs as administrator). The first run installs for a few minutes.
 3. Ctrl+P pauses all 4 (press Ctrl+P again to play on) and Ctrl+C stops all 4.
    They work while a Wizard101 window or a Quadbox v2 window is in front (so
    copying text in your browser never stops the bots). Don't close the window
@@ -46,7 +47,8 @@ doesn't stop anything; quadbox-v2.bat option 4 opens it again.
 
 Running it from cmd instead of double-clicking
 ----------------------------------------------
-Open cmd (Windows key, type cmd, Enter), then:
+Open cmd as administrator (Windows key, type cmd, right-click Command Prompt >
+Run as administrator), then:
 
   cd /d "C:\path\to\wiz101-auto"             (the folder you extracted)
   quadbox-v2.bat                              (the menu, as when double-clicked)
