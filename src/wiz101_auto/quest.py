@@ -8679,6 +8679,12 @@ class Quester:
         logger.info(f"{name} is here: walking up to talk")
         start_zone = await self.client.zone_name() or ""
         await self.travel(pos, npc=True)
+        await wait_for_loading(self.client)
+        if (await self.client.zone_name() or "") != start_zone:
+            # (The walk went through a door beside them: Fitzhume and the Myth
+            # School. Not a talk: back, and from around them.)
+            await self._talk_from_around(name, pos, start_zone, objective)
+            return True
         if not await wait_until_free(self.client, timeout=5):
             return True
         if await self.interact(objective):
