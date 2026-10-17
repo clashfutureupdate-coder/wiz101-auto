@@ -2935,8 +2935,14 @@ class Quester:
             # Emperor's Palace at 2% health, and no trip meant no healing.)
             return False
         objective = await self.objective()
-        if await self._in_dungeon(zone) and not await self._boss_settled(objective or ""):
-            return False  # (stay: the boss's spawn cutscene; leaving broke the copy)
+        if await self._in_any_dungeon(zone):
+            # Never out of a dungeon to heal (the player's rule: potions
+            # instead): out of the Timeless Tower after Vigilant Adapa, the
+            # Recall back found a new copy and all of Zruvan Grotto was redone.
+            if getattr(self, "_no_trip_logged", None) != zone:
+                self._no_trip_logged = zone
+                logger.info("in a dungeon: no heal trip out (wisps here and potions instead)")
+            return False
         dest = objective_zone(objective) if objective else None
         coming_back = dest == zone or (dest is None and is_combat_objective(objective or ""))
         if not zone or not (marked or coming_back or force):
