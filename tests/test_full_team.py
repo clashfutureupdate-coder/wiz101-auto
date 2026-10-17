@@ -26,3 +26,17 @@ def test_drop_done_quest_dungeon_won_solo(tmp_path, monkeypatch):
     assert teamup.drop_team_dungeons(set()) == []
     got = teamup.drop_team_dungeons(set(), done={"The Silent Sabers"})
     assert got == ["Mirage/Interiors/MR_Z02_QuietBungalow"]
+
+
+def test_a_try_alone_makes_the_dungeon_solo(tmp_path, monkeypatch):
+    import json
+
+    from wiz101_auto import teamup
+
+    f = tmp_path / "team.json"
+    f.write_text(json.dumps({"Mirage/Interiors/MR_Z08_EeremGardens": "Eerkala's Secret"}))
+    monkeypatch.setattr(teamup, "TEAM_LIST_FILE", f)
+    monkeypatch.setattr(teamup, "_SOLO_UNTIL", {})
+    assert teamup.is_team_up_zone("Mirage/Interiors/MR_Z08_EeremGardens")
+    teamup.solo_for("Mirage/Interiors/MR_Z08_EeremGardens", 60)
+    assert not teamup.is_team_up_zone("Mirage/Interiors/MR_Z08_EeremGardens")

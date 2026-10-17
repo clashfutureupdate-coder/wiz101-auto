@@ -172,6 +172,8 @@ HUB_SKIP_NEAR = 3000.0  # the quest marker this near: no hub button, walk to it
 FISH_PROBE_NEAR = 1500.0  # this near a fishing objective's marker: probe there
 FINDER_FOLLOW_SECONDS = 600.0  # Quest Finder tracked this long per try (its marker: a quest giver)
 FINDER_EVERY_SECONDS = 1800.0  # with no main quest in the book, Quest Finder first this often
+SOLO_TRIES = 3  # tries alone while queued for a team (after the first empty wait)
+SOLO_TRY_SECONDS = 900.0  # one try's window: the dungeon taken as a solo one meanwhile
 VISIT_RETRIES = 3  # a visit in this world with no way there: tries before it's dropped
 TRACK_RETRY_SECONDS = 15.0  # tracking the chosen quest failed: rank again this soon
 DUNGEON_TOP_UP = 0.8  # in a dungeon below this health: wisps, else a potion, before going on
@@ -2441,7 +2443,10 @@ class Quester:
         # (Or a lever: 'Activate Cage Release Lever' after Captain Zubkov and
         # Commandant Lassard were beaten queued for a team at the Mayor's House.)
         solo_step = talk_target(objective_now) or objective_now.lower().startswith("activate ")
-        if (is_team_dungeon(dungeon or "") and solo_step
+        solo_try = time.monotonic() < self.__dict__.setdefault("_solo_try", {}).get(dungeon or "", 0.0)
+        if solo_try:
+            pass  # (an alone try after no team came: below, as any dungeon)
+        elif (is_team_dungeon(dungeon or "") and solo_step
                 and (dungeon or "") not in TEAM_UP_DUNGEONS and _dungeon_base(dungeon or "") in beaten):
             # (Only once a team beat its boss: 'Go To Eclipse Tower' is no
             # fight by name, and the bot walked alone into Ravik Dreamscape.
@@ -2484,8 +2489,40 @@ class Quester:
                 self._dungeon = (zone or "", await self.client.zone_name() or "")
                 self._sigil_failed_at = None
                 return True
-            # Another realm, or no team yet: back on the sigil and wait again
-            # (the user wants this dungeon); never set it aside, never go in alone.
+            # Another realm, or no team yet: back on the sigil and wait again.
+            # After NO_TEAM_SOLO_AFTER empty waits, one try alone (the player,
+            # 2026-10-16: Eerkala, no team for an hour, had been beaten to
+            # 1,064 of 19,600 solo), then the queue again.
+            # (The player, 2026-10-16: queued after 2 losses, then up to
+            # SOLO_TRIES tries alone while the queue stands; then side quests,
+            # still queued.)
+            if outcome == "none" and (dungeon or "") not in TEAM_UP_DUNGEONS:
+                from .teamup import solo_for
+
+                tries = self.__dict__.setdefault("_solo_tries", {})
+                used = tries.get(dungeon or "", 0)
+                name = (dungeon or "").split("/")[-1]
+                if used < SOLO_TRIES:
+                    tries[dungeon or ""] = used + 1
+                    self._solo_try[dungeon or ""] = time.monotonic() + SOLO_TRY_SECONDS
+                    solo_for(dungeon or "", SOLO_TRY_SECONDS)
+                    logger.info(f"no team for {name} yet: trying it alone ({used + 1} of {SOLO_TRIES}), "
+                                "still queued")
+                    return True
+                quest = self._active_quest or ""
+                if quest:
+                    from .teamup import QUEUE_RECHECK
+
+                    level = await self.client.stats.reference_level()
+                    logger.warning(f"{name}: no team and {SOLO_TRIES} tries alone lost; side quests "
+                                   "while the queue stands")
+                    self.setbacks.set_quest_aside(quest, objective_now, level, main=True,
+                                                  retry_after=QUEUE_RECHECK * 2)
+                    self.setbacks.save()
+                    tries[dungeon or ""] = 0
+                    self._ranked_for = None
+                    self._last_rank = -1e9
+                    return True
             return False
         self.controller.allow_idle(SIGIL_WAIT + 10)
         try:

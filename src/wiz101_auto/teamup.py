@@ -320,10 +320,21 @@ def _room_no(zone: str) -> int:
     return int(m.group(1)) if m else 99
 
 
+_SOLO_UNTIL: dict[str, float] = {}  # dungeon base -> monotonic end of a try alone
+
+
+def solo_for(dungeon: str, seconds: float):
+    """For `seconds`, `dungeon` is fought as a solo one (a try alone while the
+    Team Up queue stands: no stopping short for a teammate to start the fight)."""
+    _SOLO_UNTIL[_dungeon_base(dungeon)] = time.monotonic() + seconds
+
+
 def is_team_up_zone(zone: str) -> bool:
     """A room of a dungeon that is only entered with a team."""
     teams = team_list()
     if zone in TEAM_UP_HUBS:
+        return False
+    if zone and time.monotonic() < _SOLO_UNTIL.get(_dungeon_base(zone), 0.0):
         return False
     if zone in TEAM_UP_DUNGEONS or zone.startswith(TEAM_UP_PREFIXES) or in_team_list(zone):
         return True
