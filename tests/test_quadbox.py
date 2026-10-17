@@ -329,3 +329,10 @@ def test_quest_window_shows_only_the_team(monkeypatch, tmp_path):
     monkeypatch.setattr(quadpanel, "bot_pid", lambda r: 0)
     rows = quadpanel.panel_rows({"q1": "Liam Titan", "q2": "Alex Vault", "q3": False})
     assert [r["role"] for r in rows] == ["q1", "q2", "booster"]
+
+
+def test_no_pet_pavilion_trips_in_quadbox():
+    from wiz101_auto.config import Config, load_config
+
+    assert not Config().quadbox.pet_trips
+    assert not load_config("configs/quadbox.yaml").quadbox.pet_trips

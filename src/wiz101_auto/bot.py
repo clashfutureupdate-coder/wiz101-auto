@@ -595,6 +595,11 @@ async def run(cfg: Config):
             cfg.progression.school = ""
         logger.info(f"quadbox: playing as {quadlink.role()}")
         quadlink.keep_awake()  # (overnight: the PC's sleep timer would end the run)
+        if cfg.pet.auto and not cfg.quadbox.pet_trips:
+            # (The player: both questers walked off to the Pet Pavilion at full
+            # energy, away from the main quest.) Back on: quadbox.pet_trips.
+            cfg.pet.auto = False
+            logger.info("quadbox: no Pet Pavilion trips (quadbox.pet_trips: false)")
     s = cfg.safety
     controller = Controller(s.stop_key, s.pause_key, s.max_hours)
     logger.info(f"mode={cfg.mode}; {s.stop_key}=stop, {s.pause_key}=pause/resume")

@@ -170,7 +170,8 @@ progression:
                                 trap_copies, shield_copies, include: {"Pixie": 2}, exclude: [...]
 
 pet:
-  auto: true                    play the pet dance game whenever energy is full
+  auto: true                    single bot only: play the pet dance game whenever energy is full
+                                (quadbox: see quadbox: pet_trips)
   feed: true                    feed the first snack after each win
 
 movement:
@@ -181,6 +182,8 @@ quadbox:
   join_fights: true             questers join each other's fights on the same objective
   join_range: 3000              ... this close, in the same zone
   friend_teleports: true        into a teammate's dungeon, and the booster to the questers
+  pet_trips: false              true = go train the pet at the Pet Pavilion whenever energy
+                                is full (off: the main quest only)
   names: {q1: "...", q2: "...", q3: "..."}
                                 your questers' names exactly as the Friends list shows them
 

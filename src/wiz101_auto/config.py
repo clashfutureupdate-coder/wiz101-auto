@@ -140,6 +140,7 @@ class QuadboxConfig:
     join_fights: bool = True  # a quester joins a teammate's fight on the same objective nearby
     join_range: float = 3000.0  # ... this close (same zone)
     friend_teleports: bool = True  # into a teammate's dungeon / to a quester in another zone
+    pet_trips: bool = False  # Pet Pavilion trips when energy is full (pet.auto); off: the main quest only
 
 
 @dataclass
