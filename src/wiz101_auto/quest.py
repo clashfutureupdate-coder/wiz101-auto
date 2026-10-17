@@ -174,6 +174,7 @@ FINDER_FOLLOW_SECONDS = 600.0  # Quest Finder tracked this long per try (its mar
 FINDER_EVERY_SECONDS = 1800.0  # with no main quest in the book, Quest Finder first this often
 SOLO_TRIES = 3  # tries alone while queued for a team (after the first empty wait)
 SOLO_TRY_SECONDS = 900.0  # one try's window: the dungeon taken as a solo one meanwhile
+TALK_RING = 150.0  # around an NPC that walking up to gave no prompt: spots this far off
 VISIT_RETRIES = 3  # a visit in this world with no way there: tries before it's dropped
 TRACK_RETRY_SECONDS = 15.0  # tracking the chosen quest failed: rank again this soon
 DUNGEON_TOP_UP = 0.8  # in a dungeon below this health: wisps, else a potion, before going on
@@ -8676,6 +8677,7 @@ class Quester:
         if pos is None:
             return False
         logger.info(f"{name} is here: walking up to talk")
+        start_zone = await self.client.zone_name() or ""
         await self.travel(pos, npc=True)
         if not await wait_until_free(self.client, timeout=5):
             return True
@@ -8684,8 +8686,40 @@ class Quester:
         await self.client.send_key(Keycode.S, 0.3)
         await self.client.send_key(Keycode.W, 0.3)
         await asyncio.sleep(0.5)
-        await self.interact(objective)
+        if await self.interact(objective):
+            return True
+        await self._talk_from_around(name, pos, start_zone, objective)
         return True
+
+    async def _talk_from_around(self, name: str, pos: XYZ, zone: str, objective: str) -> bool:
+        """The walk up to `name` gave no talk prompt (Librarian Fitzhume, by the
+        Myth School's door: the teleport onto him was refused and the walk
+        went through the door instead): back to his zone if the walk left it,
+        then spots around him, a talk prompt looked for at each."""
+        from .smoothwalk import yaw_to
+
+        if (await self.client.zone_name() or "") != zone and not await self.go_to_zone(zone):
+            return False
+        for i in range(8):
+            a = i * math.pi / 4
+            spot = XYZ(pos.x + math.cos(a) * TALK_RING, pos.y + math.sin(a) * TALK_RING, pos.z)
+            if not await self._clear_spot(spot):
+                continue
+            await self.client.teleport(spot)
+            await asyncio.sleep(0.6)
+            if (await self.client.zone_name() or "") != zone:
+                return False  # (a door after all)
+            try:
+                await self.client.body.write_yaw(yaw_to(await self._position(), pos))
+            except Exception:
+                pass
+            await asyncio.sleep(0.3)
+            prompt = (await ui.text_at(self.client, ui.NPC_RANGE_TEXT) or "").lower()
+            if "talk" in prompt:
+                logger.info(f"{name}: a talk prompt from beside them; talking")
+                return await self.interact(objective)
+        logger.warning(f"{name}: no talk prompt from any side")
+        return False
 
     async def _talk_to_npc_near(self, spot: XYZ, objective: str) -> bool:
         """Walk up to a named NPC (not an enemy) within NPC_NEAR_MARKER of
