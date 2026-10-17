@@ -11,17 +11,20 @@ echo.
 
 REM ---- 0. Self-update from GitHub (same as wiz101.bat) ----------------------
 REM config.yaml, state, quad and .venv are never touched (git-ignored).
-set "REPO=https://github.com/szatcg/wiz101-auto.git"
+REM Quadbox v2 updates from its own branch (the fork it was made in): the
+REM original repo's main has no quadbox, and updating from it would remove it.
+set "REPO=https://github.com/clashfutureupdate-coder/wiz101-auto.git"
+set "BRANCH=quadbox-v2"
 if /i "%~1"=="--updated" goto :noupdate
 where git >nul 2>&1 || goto :noupdate
 echo [0/3] Checking for updates...
 if not exist .git (
   git init -q
   git remote add origin "%REPO%"
-  git fetch -q origin main && (
-    git reset -q --hard origin/main
-    git branch -q -M main
-    git branch -q -u origin/main main
+  git fetch -q origin %BRANCH% && (
+    git reset -q --hard origin/%BRANCH%
+    git branch -q -M %BRANCH%
+    git branch -q -u origin/%BRANCH% %BRANCH%
     "%~f0" --updated
     exit /b
   ) || (
@@ -33,7 +36,12 @@ git diff --quiet && git diff --cached --quiet || (
   echo       local changes present; skipping the automatic update.
   goto :noupdate
 )
-git pull -q --ff-only origin main && (
+for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "HERE=%%b"
+if /i not "%HERE%"=="%BRANCH%" (
+  echo       on branch %HERE%, not %BRANCH%; skipping the automatic update.
+  goto :noupdate
+)
+git pull -q --ff-only "%REPO%" %BRANCH% && (
   for /f %%h in ('git rev-parse --short HEAD') do echo       on version %%h
   "%~f0" --updated
   exit /b
