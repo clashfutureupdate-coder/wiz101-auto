@@ -2483,6 +2483,11 @@ class Quester:
                     tries[dungeon or ""] = used + 1
                     self._solo_try[dungeon or ""] = time.monotonic() + SOLO_TRY_SECONDS
                     solo_for(dungeon or "", SOLO_TRY_SECONDS)
+                    # (A fresh clock for the try: the 15 min waited for the team
+                    # counted as no progress, and the stall rule set the quest
+                    # aside the second solo try 1 of 3 began, Shadowwock.)
+                    self._last_progress_time = time.monotonic()
+                    self._stall_switched_for = None
                     logger.info(f"queued for {(dungeon or '').split('/')[-1]}: trying it alone meanwhile "
                                 f"({used + 1} of {SOLO_TRIES})")
                     return True
@@ -2524,6 +2529,11 @@ class Quester:
                     tries[dungeon or ""] = used + 1
                     self._solo_try[dungeon or ""] = time.monotonic() + SOLO_TRY_SECONDS
                     solo_for(dungeon or "", SOLO_TRY_SECONDS)
+                    # (A fresh clock for the try: the 15 min waited for the team
+                    # counted as no progress, and the stall rule set the quest
+                    # aside the second solo try 1 of 3 began, Shadowwock.)
+                    self._last_progress_time = time.monotonic()
+                    self._stall_switched_for = None
                     logger.info(f"no team for {name} yet: trying it alone ({used + 1} of {SOLO_TRIES}), "
                                 "still queued")
                     return True
