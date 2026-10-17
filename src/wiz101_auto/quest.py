@@ -2472,6 +2472,20 @@ class Quester:
                 outcome = await team_up(self, dungeon)
             finally:
                 self.controller.end_idle()
+            if outcome == "queued" and (dungeon or "") not in TEAM_UP_DUNGEONS:
+                # Queued: first up to SOLO_TRIES tries alone while the queue
+                # stands (the player), only then side quests meanwhile.
+                from .teamup import solo_for
+
+                tries = self.__dict__.setdefault("_solo_tries", {})
+                used = tries.get(dungeon or "", 0)
+                if used < SOLO_TRIES:
+                    tries[dungeon or ""] = used + 1
+                    self._solo_try[dungeon or ""] = time.monotonic() + SOLO_TRY_SECONDS
+                    solo_for(dungeon or "", SOLO_TRY_SECONDS)
+                    logger.info(f"queued for {(dungeon or '').split('/')[-1]}: trying it alone meanwhile "
+                                f"({used + 1} of {SOLO_TRIES})")
+                    return True
             if outcome == "queued":
                 # The main quest waits for the team (side quests meanwhile);
                 # back here after QUEUE_RECHECK if the queue lapsed.
