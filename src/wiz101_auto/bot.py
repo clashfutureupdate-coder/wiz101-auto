@@ -476,6 +476,19 @@ async def status_loop(client, controller: Controller, fighter: Fighter, quester,
                 "targets": target_status(farm.name, load_looted()),
             }
         if quester:
+            story = getattr(quester, "_status_story", (None, -1e9))
+            if time.monotonic() - story[1] > 30:
+                try:
+                    from .questlist import load_completed, story_place, world_of_zone
+
+                    story = (story_place(quester._active_quest or "", load_completed(),
+                                         world_of_zone(info.get("zone") or "")), time.monotonic())
+                except Exception as exc:
+                    story = (None, time.monotonic())
+                    logger.debug(f"story position unread: {exc!r}")
+                quester._status_story = story
+            if story[0]:
+                info["story"] = story[0]
             info.update(
                 quest=quester._active_quest or "",
                 objective=quester._last_progress[0],
@@ -677,8 +690,10 @@ async def run(cfg: Config):
                 quester.gear = GearManager(client, progression.school or "")
                 quester.gear.loot_only = True
                 quester.gear.restore_only = bool(GearMemory().restore)
-            if cfg.progression.enabled:
+            if cfg.progression.enabled and not (quadlink.active() and not cfg.quadbox.trainer_trips):
                 quester.trainer = SpellTrainer(quester, progression, cfg.progression.train_levels)
+            elif quadlink.active():
+                logger.info("quadbox: no trainer trips (quadbox.trainer_trips: false)")
             quester.healer = DungeonHealer(quester, cfg.upkeep)
             quester.pet = PetDancer(quester, cfg.pet)
             quester.potions = PotionShopper(quester, cfg.upkeep.use_potions and cfg.upkeep.buy_potions)
@@ -714,6 +729,8 @@ async def run(cfg: Config):
         if quadlink.active():
             tasks.append(asyncio.create_task(quadlink.publish_loop(client, controller, quester),
                                              name="quadlink"))
+            tasks.append(asyncio.create_task(quadlink.anti_afk(client, controller), name="anti-afk"))
+            tasks.append(asyncio.create_task(quadlink.same_realm(client, controller), name="realm"))
         if cfg.mode == "boost":
             tasks.append(asyncio.create_task(quadlink.boost_loop(client, cfg.upkeep, controller),
                                              name="boost"))

@@ -2331,8 +2331,10 @@ class Quester:
             self._sigil_for = ""
         from . import quadlink
 
-        if quadlink.active() and await quadlink.into_mates_dungeon(self, zone or "", sigil):
-            # (A teammate is in there already: their copy, not one of our own.)
+        if quadlink.active() and (await quadlink.into_mates_dungeon(self, zone or "", sigil)
+                                  or await quadlink.gather_at_sigil(self, zone or "", sigil)):
+            # (A teammate is in there already: their copy, not one of our own;
+            # or the team gathered here and the first in led: followed it.)
             self._sigil_failed_at = None
             return True
         from .teamup import QUEUE_RECHECK, load_queue
@@ -9958,8 +9960,15 @@ class Quester:
             return
         from . import quadlink
 
-        if quadlink.active() and await quadlink.join_teammate_fight(self):
-            return  # (a teammate's fight on our objective, next to us: in it)
+        if quadlink.active():
+            if await quadlink.join_teammate_fight(self):
+                return  # (a teammate's fight on our objective, in our zone: in it)
+            if await quadlink.help_the_slowest(self):
+                return  # (story quests ahead of a teammate: helping them meanwhile)
+            if await quadlink.wait_for_backup(self):
+                return  # (a boss and its guards: a teammate or the booster came, or not)
+            if await quadlink.follow_arrow_if_stuck(self):
+                return  # (the same objective 90 s: where the quest arrow points)
         await self._learn_door_walk()
         await clear_popups(self.client)
         logger.debug("step: popups cleared")

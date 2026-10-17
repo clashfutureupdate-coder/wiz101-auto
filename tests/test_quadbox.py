@@ -124,7 +124,7 @@ def test_quester_joins_a_teammates_fight_on_the_same_objective_nearby():
     assert fight_to_join(mates, "A", (0.0, 0.0, 0.0), "Talk to Gamma") is None
     assert fight_to_join(mates, "A", (0.0, 0.0, 0.0), "Defeat Lord Nightshade") is None
     assert fight_to_join(mates, "B", (0.0, 0.0, 0.0), "Defeat Rattlebones") is None
-    assert fight_to_join(mates, "A", (9000.0, 0.0, 0.0), "Defeat Rattlebones") is None
+    assert fight_to_join(mates, "A", (9000.0, 0.0, 0.0), "Defeat Rattlebones", join_range=3000) is None
 
 
 def test_a_teammate_inside_the_dungeon_of_this_sigil():
@@ -253,7 +253,7 @@ def test_quest_window_rows(monkeypatch, tmp_path):
     assert rows["q1"]["zone"] == "WC_Unicorn" and rows["q1"]["done"] == "7"
     assert rows["q2"]["state"] == "starting"  # (running, no status yet)
     assert rows["q3"]["state"] == "stopped"
-    assert rows["booster"]["state"] == "fighting" and "booster" in rows["booster"]["quest"]
+    assert rows["booster"]["state"] == "fighting" and "booster" in rows["booster"]["quest"].lower()
 
 
 def test_reagents_off_chests_still_on():
@@ -336,3 +336,86 @@ def test_no_pet_pavilion_trips_in_quadbox():
 
     assert not Config().quadbox.pet_trips
     assert not load_config("configs/quadbox.yaml").quadbox.pet_trips
+
+
+# --- team play: dungeon gathering, catching up, backup, story position ---
+
+def test_gathering_at_a_sigil():
+    from wiz101_auto.quadlink import gather_plan
+
+    sigil = P(100.0, 100.0)
+    obj = "Defeat the Rat King"
+    away = {"q2": _mate("q2", zone="WC/Sewers", pos=(5000.0, 0.0, 0.0), objective=obj)}
+    assert gather_plan("q1", away, "WC/Sewers", sigil, obj) == "wait"
+    here = {"q2": _mate("q2", zone="WC/Sewers", pos=(150.0, 120.0, 0.0), objective=obj)}
+    assert gather_plan("q1", here, "WC/Sewers", sigil, obj) == "lead"
+    assert gather_plan("q2", {"q1": _mate("q1", zone="WC/Sewers", pos=(110.0, 90.0, 0.0), objective=obj)},
+                       "WC/Sewers", sigil, obj) == "follow"
+    other = {"q2": _mate("q2", zone="WC/Hub", objective="Talk to Gamma")}
+    assert gather_plan("q1", other, "WC/Sewers", sigil, obj) == "go"  # (not on this objective)
+
+
+def test_three_story_quests_ahead_waits_for_the_slowest():
+    from wiz101_auto.quadlink import story_gap
+
+    mates = {"q2": _mate("q2", story=7), "q3": _mate("q3", story=9), "booster": _mate("booster")}
+    assert story_gap(10, mates) == (3, "q2")
+    assert story_gap(0, mates) == (0, None)  # (our place unknown: never wait)
+    assert story_gap(10, {"q2": _mate("q2", story=0)}) == (0, None)
+
+
+def test_a_lone_named_enemy_is_a_boss():
+    from wiz101_auto.quadlink import lone_boss
+
+    assert lone_boss("Defeat Lord Nightshade")
+    assert not lone_boss("Defeat 4 Rattlebones") and not lone_boss("Defeat Rattlebones (3)")
+    assert not lone_boss("Talk to Gamma")
+
+
+def test_the_booster_answers_a_call_for_backup():
+    mates = {"q1": _mate("q1", zone="A"), "q2": _mate("q2", zone="B", wants_backup=True)}
+    assert booster_plan(mates, "A", (0.0, 0.0, 0.0), now=1e9) == ("zone", "q2")
+    assert booster_plan(mates, "B", (5000.0, 0.0, 0.0), now=1e9) == ("near", "q2")
+    assert booster_plan(mates, "B", (10.0, 0.0, 0.0), now=1e9) is None
+
+
+def test_joining_a_fight_anywhere_in_the_zone():
+    far = {"q2": _mate("q2", zone="A", pos=(20000.0, 0.0, 0.0), in_battle=True,
+                       objective="Defeat Rattlebones")}
+    assert fight_to_join(far, "A", (0.0, 0.0, 0.0), "Defeat Rattlebones") == "q2"
+    assert fight_to_join(far, "A", (0.0, 0.0, 0.0), "Defeat Rattlebones", join_range=3000) is None
+
+
+def test_story_place():
+    from wiz101_auto.questlist import ListedQuest, story_place
+
+    order = [("Wizard City", ListedQuest(1, "Unicorn Way", "")),
+             ("Wizard City", ListedQuest(2, "Ghost Hunters", "")),
+             ("Wizard City", ListedQuest(3, "Skeleton Crew", "")),
+             ("Zafaria", ListedQuest(1, "Unicorn Way", ""))]
+    assert story_place("Skeleton Crew", order=order)["number"] == 3
+    assert story_place("Unicorn Way", world="Zafaria", order=order)["world"] == "Zafaria"
+    assert story_place("Unicorn Way", order=order)["world"] == "Wizard City"
+    # Completed in order: the next one, never a later world's repeat of a name.
+    got = story_place("", ["Unicorn Way", "Ghost Hunters"], order=order)
+    assert (got["world"], got["number"], got["of"]) == ("Wizard City", 3, 3)
+    assert story_place("Nowhere", order=order) is None
+
+
+def test_quest_window_shows_the_story_place(monkeypatch, tmp_path):
+    from wiz101_auto import quadpanel
+
+    monkeypatch.setattr(quadbox, "QUAD", tmp_path)
+    monkeypatch.setattr(quadpanel, "SHARED", tmp_path / "shared")
+    monkeypatch.setattr(quadpanel, "bot_pid", lambda r: 1)
+    now = 1_000_000.0
+    st = tmp_path / "q1" / "state"
+    st.mkdir(parents=True)
+    (st / "status.json").write_text(json.dumps({
+        "time": now, "state": "running", "health": "900/1200", "quest": "Skeleton Crew",
+        "story": {"world": "Wizard City", "number": 3, "of": 38, "quest": "Skeleton Crew"}}))
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "q1.json").write_text(json.dumps({"helping": "q2"}))
+    row = quadpanel.panel_rows({"q1": "Liam Titan", "q2": "Alex Vault", "q3": False}, now=now)[0]
+    assert row["story_line"] == "Wizard City  ·  Quest 3 of 38" and abs(row["story_frac"] - 3 / 38) < 1e-9
+    assert row["health_frac"] == 0.75 and "helping" in row["note"]

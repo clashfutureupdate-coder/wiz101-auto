@@ -15,7 +15,7 @@ upkeep:
   potion_health_ratio: 0.5
   potion_mana_ratio: 0.25
   collect_wisps: true
-  min_health_to_fight: 0.8
+  min_health_to_fight: 0.5     # heal only under 50% health (before questing on, too)
   rest_until_health: 0.95
   rest_max_minutes: 8
 
@@ -48,5 +48,6 @@ quadbox:
   join_fights: true           # questers join each other's fights on the same objective
   friend_teleports: true      # into a teammate's dungeon, and the booster to the questers
   pet_trips: false            # true: train the pet at the Pet Pavilion whenever energy is full
+  trainer_trips: false        # true: go to the school professor to train new spells
   # Your questers' names exactly as the Friends list shows them (only two? q3: false):
   names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}

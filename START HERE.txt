@@ -88,16 +88,30 @@ Tips
 
 What each wizard does
 ---------------------
-q1, q2, q3   Quest on their own, like the single bot. When a teammate is
-             fighting nearby for the same "Defeat ..." objective, they join that
-             fight instead of starting another. At a dungeon sigil, if a
-             teammate is already inside, they friend-teleport to them (the same
-             dungeon) instead of going in alone. Team Up dungeons are entered
-             straight away: the team follows by friend teleport, no public
-             Team Up queue.
-booster      Never quests. Joins any quester's fight (teleports onto them in the
-             same zone, friend-teleports from another zone); otherwise stays
-             with q1. Its deck is left exactly as you built it.
+Team play
+- Questers join each other's fights (same objective, same zone) instead of
+  starting their own.
+- Wizards who should be together but can't see each other are in different
+  realms: the later one friend-teleports to the other (into their realm).
+- At a dungeon entrance, questers on the same objective wait for each other
+  (up to 3 minutes); the first quester goes in and the others friend-teleport
+  into the same dungeon. The booster follows.
+- A quester 3 story quests ahead of the slowest waits and helps them (their
+  fights, beside them) until it's only 1 ahead.
+- Before a boss (a "Defeat <Name>" objective), a quester with nobody near calls
+  for backup and waits up to a minute; the booster comes.
+- Anti-AFK: a wizard standing still 4 minutes takes a small step (the game
+  logs idle players out).
+
+Stays on track
+- Main story only: no side quests taken, no visits for side quests, no farming
+  when stuck (it fights for experience in the main quest's world instead).
+- 90 seconds on the same objective with the quest arrow far off: it follows
+  the arrow.
+- No pet dance, gear check or trainer trips.
+
+booster      Never quests. Joins any quester's fight, answers calls for
+             backup, otherwise stays with q1. Its deck is left as you built it.
 
 The window shows each wizard's level, health, zone and objective, and the last
 thing each one did. Each wizard's own files are in quad\q1, quad\q2, quad\q3
@@ -130,7 +144,7 @@ upkeep:
   potion_health_ratio: 0.5      drink a potion below this share of health
   potion_mana_ratio: 0.25       ... or of mana
   collect_wisps: true           pick up health and mana wisps after fights
-  min_health_to_fight: 0.8      below this, heal up before questing on
+  min_health_to_fight: 0.5      below this, heal up before questing on
   rest_until_health: 0.95       ... up to this
   min_mana_to_fight: 0.65       the same for mana
   rest_until_mana: 0.85
@@ -180,8 +194,9 @@ movement:
 quadbox:
   follow: q1                    the quester the booster stays with when nobody is fighting
   join_fights: true             questers join each other's fights on the same objective
-  join_range: 3000              ... this close, in the same zone
+  join_range: 0                 ... this close, in the same zone (0 = anywhere in it)
   friend_teleports: true        into a teammate's dungeon, and the booster to the questers
+  trainer_trips: false          true = go to the school professor to train new spells
   pet_trips: false              true = go train the pet at the Pet Pavilion whenever energy
                                 is full (off: the main quest only)
   names: {q1: "...", q2: "...", q3: "..."}

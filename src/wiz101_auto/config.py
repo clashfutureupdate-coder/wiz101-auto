@@ -138,9 +138,10 @@ class QuadboxConfig:
     names: dict = field(default_factory=dict)  # {q1: "Name One", q2: ..., q3: ...}
     follow: str = "q1"  # the quester the booster stays with when nobody is fighting
     join_fights: bool = True  # a quester joins a teammate's fight on the same objective nearby
-    join_range: float = 3000.0  # ... this close (same zone)
+    join_range: float = 0.0  # ... this close in the same zone (0: anywhere in it)
     friend_teleports: bool = True  # into a teammate's dungeon / to a quester in another zone
     pet_trips: bool = False  # Pet Pavilion trips when energy is full (pet.auto); off: the main quest only
+    trainer_trips: bool = False  # trips to the school professor to train spells
 
 
 @dataclass

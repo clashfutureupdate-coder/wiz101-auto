@@ -50,6 +50,21 @@ ARRIVE_WAIT = 20.0  # for the friend teleport's loading screen / move
 JOIN_GAP = 20.0  # seconds between tries to join the same teammate's fight
 SIGIL_MATCH = 800.0  # a teammate went in by a sigil this close to ours: the same dungeon
 UPKEEP_EVERY = 30.0  # the booster's potions and wisps, between fights
+AFK_NUDGE = 240.0  # standing still this long (free, not paused): a small step
+# (the game logs idle players out)
+REALM_CHECK_EVERY = 30.0  # a teammate close by in our zone but not in view: another realm?
+REALM_NEAR = 1200.0  # ... this close (by their post) and still not seen
+REALM_SEEN = 400.0  # a player this close to where they say they are: them
+REALM_MISSES = 2  # checks in a row before a friend teleport to their realm
+GATHER_WAIT = 180.0  # at a dungeon sigil, waiting for teammates on the same objective
+FOLLOW_IN_WAIT = 90.0  # a teammate went in first: this long for their post, then in alone
+AT_SIGIL_RANGE = 900.0  # a teammate this close to the sigil (same zone) is there
+AHEAD_START = 3  # story quests ahead of the slowest quester: wait and help them
+AHEAD_STOP = 1  # ... until only this many ahead
+BACKUP_WAIT = 60.0  # a lone Defeat <Name> (a boss): this long for a teammate to come
+BACKUP_RANGE = 2500.0  # a teammate this close (same zone) is backup
+ARROW_STUCK = 90.0  # the same objective this long: follow the quest arrow
+ARROW_FAR = 1500.0  # ... when it points farther than this
 
 _NAMES: dict[str, str] = {}
 _cfg = None
@@ -99,6 +114,9 @@ class Mate:
     entered: tuple[str, float, float] | None = None  # (outside zone, sigil x, y) of the dungeon it's in
     state: str = "running"  # running | paused | stopped
     time: float = 0.0
+    at_sigil: tuple[str, float, float] | None = None  # (zone, x, y): waiting at this dungeon sigil
+    story: int = 0  # position in the main story (questlist.story_place "overall"; 0: unknown)
+    wants_backup: bool = False  # about to take on a boss: the booster (or a teammate) comes
 
     @classmethod
     def from_json(cls, role: str, data: dict) -> Mate:
@@ -115,6 +133,10 @@ class Mate:
             entered=(str(entered[0]), float(entered[1]), float(entered[2])) if entered else None,
             state=str(data.get("state") or "running"),
             time=float(data.get("time") or 0.0),
+            at_sigil=(str(data["at_sigil"][0]), float(data["at_sigil"][1]), float(data["at_sigil"][2]))
+            if data.get("at_sigil") else None,
+            story=int(data.get("story") or 0),
+            wants_backup=bool(data.get("wants_backup")),
         )
 
     @property
@@ -192,6 +214,14 @@ def booster_plan(mates: dict[str, Mate], zone: str, pos, lead: str = "q1",
         fighting.sort(key=lambda m: (m.zone != zone, _dist(m.pos, pos) if m.zone == zone else 0.0,
                                      m.role != lead, QUESTERS.index(m.role)))
         return "fight", fighting[0].role
+    calling = [m for m in questers if m.wants_backup]
+    if calling:
+        # A quester about to take on a boss: to them (from anywhere, at once).
+        calling.sort(key=lambda m: (m.zone != zone, m.role != lead, QUESTERS.index(m.role)))
+        m = calling[0]
+        if m.zone != zone:
+            return "zone", m.role
+        return ("near", m.role) if _dist(m.pos, pos) > FOLLOW_RANGE / 2 else None
     order = [lead, *(r for r in QUESTERS if r != lead)]
     by_role = {m.role: m for m in questers}
     leader = next((by_role[r] for r in order if r in by_role), None)
@@ -207,14 +237,16 @@ def booster_plan(mates: dict[str, Mate], zone: str, pos, lead: str = "q1",
 
 
 def fight_to_join(mates: dict[str, Mate], zone: str, pos, objective: str,
-                  join_range: float = 3000.0) -> str | None:
-    """A quester's teammate fighting nearby for the same Defeat objective:
-    the role to join (the nearest), or None."""
+                  join_range: float = 0.0) -> str | None:
+    """A quester's teammate fighting for the same Defeat objective in our zone
+    (within `join_range`; 0: anywhere in it): the role to join (the
+    nearest), or None. Joining beats starting a fight of our own."""
     if not objective.lower().startswith("defeat"):
         return None
     want = objective.strip().lower()
     near = [m for r, m in mates.items() if r in QUESTERS and m.available and m.in_battle
-            and m.zone == zone and m.objective.strip().lower() == want and _dist(m.pos, pos) <= join_range]
+            and m.zone == zone and m.objective.strip().lower() == want
+            and (join_range <= 0 or _dist(m.pos, pos) <= join_range)]
     near.sort(key=lambda m: _dist(m.pos, pos))
     return near[0].role if near else None
 
@@ -260,6 +292,20 @@ class FriendTeleports:
 
 _teleports = FriendTeleports()
 _entered: list = [None]  # (outside zone, sigil x, y) of the dungeon we went in by, or a teammate's
+_at_sigil: list = [None]  # (zone, x, y) of the sigil we're waiting at for the team
+_wants_backup: list = [False]
+_story: list = [0, -1e9]  # (our story position, when read)
+
+
+def _story_position(quester, zone: str) -> int:
+    from .questlist import load_completed, story_place, world_of_zone
+
+    try:
+        place = story_place(quester._active_quest or "", load_completed(), world_of_zone(zone))
+    except Exception as exc:
+        logger.debug(f"quadbox: story position unread: {exc!r}")
+        return 0
+    return int(place["overall"]) if place else 0
 
 
 def note_entered(outside: str, sigil) -> None:
@@ -378,6 +424,284 @@ async def _join_fight(client, mate: Mate) -> bool:
     return False
 
 
+def at_this_sigil(m: Mate, zone: str, sigil) -> bool:
+    return m.zone == zone and _dist(m.pos, (sigil.x, sigil.y)) <= AT_SIGIL_RANGE
+
+
+def gather_plan(me: str, mates: dict[str, Mate], zone: str, sigil, objective: str) -> str:
+    """At a dungeon sigil with teammates on the same objective: "wait" (some
+    aren't here yet), "lead" (all here and we're the first quester: in we
+    go, the others follow by friend teleport), "follow" (all here, another
+    leads: wait for them to go in) or "go" (nobody to wait for)."""
+    want = objective.strip().lower()
+    team = [m for r, m in mates.items() if r in QUESTERS and m.available and not m.in_battle
+            and m.objective.strip().lower() == want]
+    if not want or not team:
+        return "go"
+    if any(not at_this_sigil(m, zone, sigil) for m in team):
+        return "wait"
+    lead = min([me, *(m.role for m in team)], key=QUESTERS.index)
+    return "lead" if lead == me else "follow"
+
+
+def story_gap(me_story: int, mates: dict[str, Mate]) -> tuple[int, str | None]:
+    """How many story quests we're ahead of the slowest quester, and who that is."""
+    behind = [m for r, m in mates.items() if r in QUESTERS and m.available and m.story > 0]
+    if me_story <= 0 or not behind:
+        return 0, None
+    slowest = min(behind, key=lambda m: (m.story, QUESTERS.index(m.role)))
+    return me_story - slowest.story, slowest.role
+
+
+def lone_boss(objective: str) -> bool:
+    """'Defeat Lord Nightshade' (one named enemy: a boss, with guards), not
+    'Defeat 4 Rattlebones' or 'Defeat Rattlebones (3)'."""
+    o = objective.strip()
+    if not o.lower().startswith("defeat ") or "(" in o:
+        return False
+    rest = o[7:].strip()
+    return bool(rest) and not rest.split()[0].isdigit()
+
+
+# --- quester steps (quest.py calls these between steps) ------------------------------
+
+async def gather_at_sigil(quester, outside: str, sigil) -> bool:
+    """Before going in by a sigil: wait (GATHER_WAIT at most) for the
+    teammates on the same objective, then the first quester goes in and the
+    others friend-teleport after it. True if we're in already (followed)."""
+    from .upkeep import is_free
+
+    client = quester.client
+    objective = quester._last_progress[0] or ""
+    me = role()
+    if me not in QUESTERS:
+        return False
+    _at_sigil[0] = (outside, float(sigil.x), float(sigil.y))
+    start = time.monotonic()
+    said = ""
+    quester.controller.allow_idle(GATHER_WAIT + FOLLOW_IN_WAIT + 30)
+    try:
+        follow_since = None
+        while True:
+            await quester.controller.checkpoint()
+            if await into_mates_dungeon(quester, outside, sigil):
+                return True
+            mates = read_mates()
+            plan = gather_plan(me, mates, outside, sigil, objective)
+            waited = time.monotonic() - start
+            if plan in ("go", "lead"):
+                if plan == "lead":
+                    logger.info("quadbox: the team is at the sigil: going in first, they follow")
+                return False
+            if plan == "follow":
+                follow_since = follow_since or time.monotonic()
+                if time.monotonic() - follow_since > FOLLOW_IN_WAIT:
+                    logger.warning("quadbox: the teammate who leads never went in: going in")
+                    return False
+            elif waited > GATHER_WAIT:
+                logger.info(f"quadbox: waited {GATHER_WAIT:.0f}s at the sigil for the team: going in")
+                return False
+            if plan != said:
+                said = plan
+                logger.info("quadbox: at the dungeon sigil, " + (
+                    "waiting for the teammates on this objective" if plan == "wait"
+                    else "waiting for the first quester to go in"))
+            if not await is_free(client):
+                return False
+            await asyncio.sleep(2.0)
+    finally:
+        _at_sigil[0] = None
+        quester.controller.end_idle()
+
+
+async def _assist(client, plan, mates) -> None:
+    """Carry out a booster-style plan (join a fight, come near, friend teleport)."""
+    kind, who = plan
+    mate = mates[who]
+    zone = await client.zone_name() or ""
+    if kind == "fight" and mate.zone == zone:
+        await _join_fight(client, mate)
+    elif kind == "near":
+        await _teleport_onto(client, mate.pos, engage=False)
+    else:
+        await friend_teleport(client, who, "in a fight" if kind == "fight" else "in another zone")
+
+
+async def help_the_slowest(quester) -> bool:
+    """AHEAD_START story quests ahead of the slowest quester: stop questing
+    and help them (their fights, beside them) until AHEAD_STOP ahead. True
+    while helping (the quest step waits)."""
+    client = quester.client
+    mates = read_mates()
+    gap, slow = story_gap(_story[0], mates)
+    helping = getattr(quester, "_quad_helping", None)
+    if helping and (slow is None or gap <= AHEAD_STOP):
+        logger.success(f"quadbox: {helping} caught up: back to our own quest")
+        quester._quad_helping = None
+        return False
+    if not helping and (slow is None or gap < AHEAD_START):
+        return False
+    if helping != slow:
+        logger.info(f"quadbox: {gap} story quests ahead of {slow}: waiting and helping them")
+        quester._quad_helping = slow
+    quester.controller.allow_idle(30)
+    try:
+        here, pos = await client.zone_name() or "", await _position(client)
+        plan = booster_plan({slow: mates[slow]}, here, pos, slow)
+        if plan is not None:
+            await _assist(client, plan, mates)
+        else:
+            await asyncio.sleep(3.0)
+        quester._last_progress_time = time.monotonic()  # (waiting on purpose: no stall)
+    finally:
+        quester.controller.end_idle()
+    return True
+
+
+async def wait_for_backup(quester) -> bool:
+    """A lone named Defeat target (a boss and its guards) with no teammate
+    near: call for backup and wait up to BACKUP_WAIT, once per objective.
+    True while waiting."""
+    client = quester.client
+    objective = quester._last_progress[0] or ""
+    if not lone_boss(objective) or getattr(quester, "_quad_backup_for", None) == objective:
+        return False
+    quester._quad_backup_for = objective
+    zone = await client.zone_name() or ""
+    pos = await _position(client)
+
+    def backup_here() -> bool:
+        return any(m.available and m.zone == zone and _dist(m.pos, pos) <= BACKUP_RANGE
+                   for m in read_mates().values())
+
+    if backup_here():
+        return False
+    logger.info(f"quadbox: {objective!r}: calling for backup (up to {BACKUP_WAIT:.0f}s)")
+    _wants_backup[0] = True
+    quester.controller.allow_idle(BACKUP_WAIT + 15)
+    try:
+        end = time.monotonic() + BACKUP_WAIT
+        while time.monotonic() < end:
+            await quester.controller.checkpoint()
+            if backup_here():
+                logger.success("quadbox: backup is here: taking it on")
+                break
+            if await client.in_battle():
+                break
+            await asyncio.sleep(2.0)
+        else:
+            logger.info("quadbox: no backup came: taking it on anyway")
+    finally:
+        _wants_backup[0] = False
+        quester.controller.end_idle()
+        quester._last_progress_time = time.monotonic()
+    return True
+
+
+async def follow_arrow_if_stuck(quester) -> bool:
+    """The same objective for ARROW_STUCK seconds and the quest arrow far
+    off: go where it points (once per ARROW_STUCK per objective)."""
+    from wizwalker import XYZ
+
+    objective = quester._last_progress[0] or ""
+    since = getattr(quester, "_last_progress_time", time.monotonic())
+    if not objective or time.monotonic() - since < ARROW_STUCK:
+        return False
+    tried = quester.__dict__.setdefault("_quad_arrow_at", {})
+    if time.monotonic() - tried.get(objective, -1e9) < ARROW_STUCK:
+        return False
+    client = quester.client
+    marker = await client.quest_position.position()
+    if math.hypot(marker.x, marker.y) < 1:
+        return False  # (no arrow)
+    me = await client.body.position()
+    if me.distance(marker) < ARROW_FAR:
+        return False
+    tried[objective] = time.monotonic()
+    logger.info(f"quadbox: {ARROW_STUCK:.0f}s on {objective!r}: following the quest arrow "
+                f"({me.distance(marker):.0f} away)")
+    await quester.travel(XYZ(marker.x, marker.y, marker.z))
+    return True
+
+
+async def same_realm(client, controller) -> None:
+    """Every REALM_CHECK_EVERY: a lower-numbered teammate posting a spot near
+    ours in our zone, but no player there in view: they're in another realm.
+    After REALM_MISSES checks in a row, friend teleport to them (their realm)."""
+    from .teamup import teammates
+    from .upkeep import is_free
+
+    me = role()
+    misses: dict[str, int] = {}
+    while not controller.stopped.is_set():
+        await asyncio.sleep(REALM_CHECK_EVERY)
+        try:
+            if controller.paused or not await is_free(client):
+                continue
+            zone = await client.zone_name() or ""
+            pos = await client.body.position()
+            seen = await teammates(client, pos)
+            for r, m in read_mates().items():
+                if r == me or ROLES.index(r) > ROLES.index(me) or not m.available or m.in_battle:
+                    continue  # (the higher-numbered one moves: q2 to q1, the booster to anyone)
+                gap = _dist(m.pos, (pos.x, pos.y))
+                if m.zone != zone or gap > REALM_NEAR or gap < 150:
+                    # (Right on top of us, they'd read as ourselves: can't tell.)
+                    misses.pop(r, None)
+                    continue
+                if any(_dist(m.pos, (p.x, p.y)) <= REALM_SEEN for p in seen):
+                    misses.pop(r, None)
+                    continue
+                misses[r] = misses.get(r, 0) + 1
+                if misses[r] >= REALM_MISSES:
+                    misses[r] = 0
+                    logger.warning(f"quadbox: {r} should be right here but isn't in view: another realm; "
+                                   "friend teleporting to them")
+                    await friend_teleport(client, r, "into their realm")
+                break
+        except Exception as exc:
+            from .safety import BotStopped
+
+            if isinstance(exc, BotStopped):
+                raise
+            logger.debug(f"quadbox: realm check failed: {exc!r}")
+
+
+async def anti_afk(client, controller) -> None:
+    """A small step when the wizard has stood still AFK_NUDGE seconds (free,
+    not paused): the game logs idle players out (the booster, waiting
+    beside q1, was disconnected)."""
+    from wizwalker import Keycode
+
+    from .upkeep import is_free
+
+    last_pos, still_since = None, time.monotonic()
+    while not controller.stopped.is_set():
+        await asyncio.sleep(15.0)
+        try:
+            if controller.paused:
+                still_since = time.monotonic()  # (the player has it)
+                continue
+            p = await client.body.position()
+            here = (p.x, p.y)
+            if last_pos is None or _dist(here, last_pos) > 30 or await client.in_battle():
+                last_pos, still_since = here, time.monotonic()
+                continue
+            if time.monotonic() - still_since < AFK_NUDGE or not await is_free(client):
+                continue
+            logger.debug("quadbox: standing still a while: a small step (anti-AFK)")
+            await client.send_key(Keycode.S, 0.15)
+            await asyncio.sleep(0.3)
+            await client.send_key(Keycode.W, 0.15)
+            still_since = time.monotonic()
+        except Exception as exc:
+            from .safety import BotStopped
+
+            if isinstance(exc, BotStopped):
+                raise
+            logger.debug(f"quadbox: anti-AFK step failed: {exc!r}")
+
+
 # --- loops -----------------------------------------------------------------------
 
 async def publish_loop(client, controller, quester=None) -> None:
@@ -404,6 +728,15 @@ async def publish_loop(client, controller, quester=None) -> None:
                     _entered[0] = None  # (out of it again)
                 if _entered[0]:
                     info["entered"] = _entered[0]
+                if _at_sigil[0]:
+                    info["at_sigil"] = _at_sigil[0]
+                if _wants_backup[0]:
+                    info["wants_backup"] = True
+                if time.monotonic() - _story[1] > 30:
+                    _story[0], _story[1] = _story_position(quester, zone), time.monotonic()
+                info["story"] = _story[0]
+                if getattr(quester, "_quad_helping", None):
+                    info["helping"] = quester._quad_helping
         except Exception as exc:
             info["read_error"] = repr(exc)
         publish(info)
@@ -422,14 +755,14 @@ async def join_teammate_fight(quester) -> bool:
         return False
     mates = read_mates()
     who = fight_to_join(mates, await client.zone_name() or "", await _position(client), objective,
-                        _setting("join_range", 3000.0))
+                        _setting("join_range", 0.0))
     if not who:
         return False
     last = quester.__dict__.setdefault("_quad_join_at", {})
     if time.monotonic() - last.get(who, -1e9) < JOIN_GAP:
         return False
     last[who] = time.monotonic()
-    logger.info(f"quadbox: {who} is fighting for {objective!r} nearby: joining them")
+    logger.info(f"quadbox: {who} is fighting for {objective!r} here: joining them, not starting our own")
     return await _join_fight(client, mates[who])
 
 
@@ -475,14 +808,7 @@ async def boost_loop(client, upkeep_cfg, controller) -> None:
                     last_upkeep = time.monotonic()
                     await maintain(client, upkeep_cfg)
                 continue
-            kind, who = plan
-            mate = mates[who]
-            if kind == "fight" and mate.zone == zone:
-                await _join_fight(client, mate)
-            elif kind == "near":
-                await _teleport_onto(client, mate.pos, engage=False)
-            else:
-                await friend_teleport(client, who, "in a fight" if kind == "fight" else "in another zone")
+            await _assist(client, plan, mates)
         except Exception as exc:
             if controller.stopped.is_set():
                 break

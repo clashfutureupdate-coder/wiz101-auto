@@ -280,3 +280,56 @@ def quest_status(
         else:
             out[q.name] = "todo"
     return out
+
+
+_STORY_CACHE: list = []
+
+
+def story_order(lists: dict | None = None) -> list[tuple[str, ListedQuest]]:
+    """Every main-story quest in order: world by world (WORLDS), each world's
+    list in its order. Cached (the lists are shipped data)."""
+    if lists is None and _STORY_CACHE:
+        return _STORY_CACHE[0]
+    lists = load_world_lists() if lists is None else lists
+    order = [(w, q) for w in WORLDS for q in lists.get(w, [])]
+    if lists is not None and not _STORY_CACHE:
+        _STORY_CACHE.append(order)
+    return order
+
+
+def story_place(quest: str, completed: list[str] | None = None, world: str = "",
+                order: list[tuple[str, ListedQuest]] | None = None) -> dict | None:
+    """Where a wizard is in the main story: the quest it's on if listed (in
+    `world`, the wizard's world, when the name is used in several), else the
+    one after its last completed listed quest. Completed quests are in the
+    order done, so each is placed at its first listing after the one before
+    (names repeat across worlds: 'Unicorn Way' is in Zafaria too).
+    {"world", "number", "of" (that world's count), "quest", "overall",
+    "overall_of"}; None if unknown."""
+    order = story_order() if order is None else order
+    if not order:
+        return None
+    at = None
+    if quest:
+        hits = [i for i, (_w, q) in enumerate(order) if norm(q.name) == norm(quest)]
+        if not hits:
+            hits = [i for i, (_w, q) in enumerate(order) if _same_quest(q.name, quest)]
+        local = [i for i in hits if order[i][0] == world]
+        at = (local or hits or [None])[0]
+    if at is None and completed:
+        positions: dict[str, list[int]] = {}
+        for i, (_w, q) in enumerate(order):
+            positions.setdefault(norm(q.name), []).append(i)
+        last = -1
+        for name in completed:
+            spots = positions.get(norm(name))
+            if spots:
+                last = next((i for i in spots if i > last), last)
+        if last >= 0:
+            at = min(last + 1, len(order) - 1)
+    if at is None:
+        return None
+    world, q = order[at]
+    in_world = [x for w, x in order if w == world]
+    return {"world": world, "number": in_world.index(q) + 1, "of": len(in_world), "quest": q.name,
+            "overall": at + 1, "overall_of": len(order)}
