@@ -343,6 +343,9 @@ def _save_my_stats(me) -> None:
 
 
 
+EMPTY_HAND_READS = 6  # reads, a second apart, before an empty hand is played as one
+
+
 class Fighter(CombatHandler):
     def __init__(self, client, strategy: Strategy, *, max_discards: int = 99, flee_below: float = 0.0,
                  rollouts: bool = True):
@@ -793,14 +796,17 @@ class Fighter(CombatHandler):
                     logger.warning(f"discarding {name} didn't work; no more discards this round, "
                                    f"and never {name} again this fight")
 
-            if not battle.cards and battle.upcoming and self.__dict__.get("_empty_fixed") != battle.round:
-                # No hand read with cards still to draw: a card left picked up
-                # after a cast that didn't take (Eerkala, with a team: four
-                # rounds passed on "hand: ;"). Esc puts it back; read again.
-                self._empty_fixed = battle.round
-                logger.warning("no cards read in hand: Esc to drop a picked-up card, then reading again")
-                await self.client.send_key(Keycode.ESC, 0.1)
-                await asyncio.sleep(0.8)
+            empty = self.__dict__.setdefault("_empty_reads", {})
+            if not battle.cards and battle.upcoming and empty.get(battle.round, 0) < EMPTY_HAND_READS:
+                # No hand read with cards still to draw (Eerkala, with a team:
+                # rounds passed on "hand: ;"): the cards not dealt out yet as
+                # the round began, or one left picked up after a cast that
+                # didn't take. Esc once, then wait and read again.
+                n = empty[battle.round] = empty.get(battle.round, 0) + 1
+                if n == 1:
+                    logger.warning("no cards read in hand: Esc, then reading again for a few seconds")
+                    await self.client.send_key(Keycode.ESC, 0.1)
+                await asyncio.sleep(1.0)
                 continue
             _note_unknown_cards(battle)
             self.last_team_alive = any(not a.is_minion and not a.is_dead for a in battle.allies)
