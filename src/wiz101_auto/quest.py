@@ -1684,6 +1684,18 @@ class Quester:
                 self._stall_switched_for = None
                 self._last_progress_time = time.monotonic()
                 return
+            from . import quadlink
+
+            if quest and quest in self._mainline and quadlink.active():
+                # (Quadbox, main story only: never aside. Alex's 'Ghost Hunters'
+                # was set aside at 0 of 2 Lost Souls and he followed Quest
+                # Finder to Diego.) On with it: the quest arrow next step.
+                logger.info(f"no progress on {objective!r} for {waited / 60:.0f} min: staying on the main "
+                            f"quest {quest!r} (quadbox: main story only)")
+                self._stall_switched_for = None
+                self._last_progress_time = time.monotonic()
+                self.__dict__.setdefault("_quad_arrow_at", {}).pop(objective, None)
+                return
             if quest:
                 level = await self.client.stats.reference_level()
                 self.setbacks.set_quest_aside(quest, objective, level, main=quest in self._mainline,
@@ -5257,6 +5269,19 @@ class Quester:
             # inefficient; the previous world's side quests instead").
             chosen = choose_quest([q for _, q in all_quests], set_aside, self.quest_order, world,
                                   FALLBACK_SIDE_PLACES.get(zone_world(world) or "", ()), anywhere=True)
+        from . import quadlink
+
+        if quadlink.active() and main_quests and not (chosen and chosen.mainline):
+            # (Quadbox, main story only: a main quest in the book is the one
+            # followed, set aside or not; never Quest Finder or a side quest
+            # instead: Alex went to Diego with 'Ghost Hunters' 0 of 2.)
+            held = [q for q in main_quests if q.name not in set_aside] or main_quests
+            if chosen is None or not getattr(self, "_quad_main_logged", None) == held[0].name:
+                self._quad_main_logged = held[0].name
+                logger.info(f"quadbox: main story only: following {held[0].name!r}")
+            if [q for q in held if self.setbacks.deferred.pop(q.name, None) is not None]:
+                self.setbacks.save()
+            chosen = held[0]
         finder = next((q for _, q in all_quests if q.name == QUEST_FINDER and q.name not in set_aside), None)
         if finder is not None and not (chosen and (chosen.mainline or chosen.activity)):
             # Quest Finder's marker points at someone with a quest for us, the
