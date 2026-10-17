@@ -341,6 +341,33 @@ async def _close_friends_list(client) -> None:
         logger.debug(f"quadbox: closing the Friends list failed: {exc!r}")
 
 
+async def _friends_list_open(client) -> bool:
+    try:
+        for w in await client.root_window.get_windows_with_name("NewFriendsListWindow"):
+            if await w.is_visible():
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def _open_friends_list(client) -> None:
+    """F opens the Friends list (as Deimos does before its friend teleports):
+    the Friends button click didn't, and the teleport failed on 'No child
+    window named NewFriendsListWindow' (the booster to Liam)."""
+    from wizwalker import Keycode
+
+    if await _friends_list_open(client):
+        return
+    for _ in range(2):
+        await client.send_key(Keycode.F, 0.1)
+        for _ in range(10):
+            await asyncio.sleep(0.3)
+            if await _friends_list_open(client):
+                await asyncio.sleep(0.5)  # (its list fills in a moment later)
+                return
+
+
 async def _dismiss_box(client) -> str:
     """A message box after a friend teleport ("busy", "can't teleport
     there"): close it; its text ('' if none)."""
@@ -380,6 +407,7 @@ async def friend_teleport(client, who: str, why: str) -> bool:
     pos_before = await _position(client)
     logger.info(f"quadbox: friend teleport to {who} ({name}): {why}")
     try:
+        await _open_friends_list(client)
         async with client.mouse_handler:
             await asyncio.wait_for(teleport_to_friend_from_list(client, name=name), FRIEND_TP_TIMEOUT)
     except Exception as exc:
