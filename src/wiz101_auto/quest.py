@@ -9963,6 +9963,8 @@ class Quester:
         if quadlink.active():
             if await quadlink.join_teammate_fight(self):
                 return  # (a teammate's fight on our objective, in our zone: in it)
+            if await quadlink.follow_the_fight_leader(self):
+                return  # (q1 has our Defeat objective too: beside them, into their fights)
             if await quadlink.help_the_slowest(self):
                 return  # (story quests ahead of a teammate: helping them meanwhile)
             if await quadlink.wait_for_backup(self):

@@ -195,6 +195,17 @@ def keep_awake() -> None:
         logger.debug(f"quadbox: couldn't keep the PC awake: {exc!r}")
 
 
+_COUNT = __import__("re").compile(r"\(\s*\d+\s+of\s+\d+\s*\)")
+
+
+def same_objective(a: str, b: str) -> bool:
+    """The same objective, whatever its count ('Defeat Lost Soul in Unicorn
+    Way (0 of 2)' = '... (1 of 2)': one fight counts for both)."""
+    def key(o: str) -> str:
+        return " ".join(_COUNT.sub("", o or "").lower().split())
+    return bool(key(a)) and key(a) == key(b)
+
+
 def _dist(a, b) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -243,9 +254,8 @@ def fight_to_join(mates: dict[str, Mate], zone: str, pos, objective: str,
     nearest), or None. Joining beats starting a fight of our own."""
     if not objective.lower().startswith("defeat"):
         return None
-    want = objective.strip().lower()
     near = [m for r, m in mates.items() if r in QUESTERS and m.available and m.in_battle
-            and m.zone == zone and m.objective.strip().lower() == want
+            and m.zone == zone and same_objective(m.objective, objective)
             and (join_range <= 0 or _dist(m.pos, pos) <= join_range)]
     near.sort(key=lambda m: _dist(m.pos, pos))
     return near[0].role if near else None
@@ -433,15 +443,25 @@ def gather_plan(me: str, mates: dict[str, Mate], zone: str, sigil, objective: st
     aren't here yet), "lead" (all here and we're the first quester: in we
     go, the others follow by friend teleport), "follow" (all here, another
     leads: wait for them to go in) or "go" (nobody to wait for)."""
-    want = objective.strip().lower()
     team = [m for r, m in mates.items() if r in QUESTERS and m.available and not m.in_battle
-            and m.objective.strip().lower() == want]
-    if not want or not team:
+            and same_objective(m.objective, objective)]
+    if not objective.strip() or not team:
         return "go"
     if any(not at_this_sigil(m, zone, sigil) for m in team):
         return "wait"
     lead = min([me, *(m.role for m in team)], key=QUESTERS.index)
     return "lead" if lead == me else "follow"
+
+
+def fight_leader(me: str, mates: dict[str, Mate], objective: str) -> str | None:
+    """On a Defeat objective a lower-numbered quester also has: that quester
+    leads (starts the fights) and we follow and join, so one fight counts
+    for both. Their role, or None (we lead, or nobody shares it)."""
+    if me not in QUESTERS or not objective.lower().startswith("defeat"):
+        return None
+    leads = [m for r, m in mates.items() if r in QUESTERS and m.available
+             and QUESTERS.index(r) < QUESTERS.index(me) and same_objective(m.objective, objective)]
+    return min(leads, key=lambda m: QUESTERS.index(m.role)).role if leads else None
 
 
 def story_gap(me_story: int, mates: dict[str, Mate]) -> tuple[int, str | None]:
@@ -525,6 +545,42 @@ async def _assist(client, plan, mates) -> None:
         await _teleport_onto(client, mate.pos, engage=False)
     else:
         await friend_teleport(client, who, "in a fight" if kind == "fight" else "in another zone")
+
+
+async def follow_the_fight_leader(quester) -> bool:
+    """Our Defeat objective is a lower-numbered quester's too: stay beside
+    them and join the fights they start, rather than start our own (both get
+    the credit at once). True while following (the quest step waits)."""
+    if not _setting("join_fights", True):
+        return False
+    client = quester.client
+    objective = quester._last_progress[0] or ""
+    mates = read_mates()
+    lead = fight_leader(role(), mates, objective)
+    if lead is None:
+        if getattr(quester, "_quad_following", None):
+            quester._quad_following = None
+        return False
+    if getattr(quester, "_quad_following", None) != lead:
+        quester._quad_following = lead
+        logger.info(f"quadbox: {lead} has {objective!r} too: fighting beside them, not alone")
+    quester.controller.allow_idle(30)
+    try:
+        m = mates[lead]
+        zone, pos = await client.zone_name() or "", await _position(client)
+        if m.zone != zone:
+            if time.time() - m.zone_since >= ZONE_SETTLE:
+                await friend_teleport(client, lead, "to fight beside them")
+        elif m.in_battle:
+            await _join_fight(client, m)
+        elif _dist(m.pos, pos) > FOLLOW_RANGE / 3:
+            await _teleport_onto(client, m.pos, engage=False)
+        else:
+            await asyncio.sleep(2.0)
+        quester._last_progress_time = time.monotonic()  # (waiting on purpose: no stall)
+    finally:
+        quester.controller.end_idle()
+    return True
 
 
 async def help_the_slowest(quester) -> bool:
@@ -737,6 +793,8 @@ async def publish_loop(client, controller, quester=None) -> None:
                 info["story"] = _story[0]
                 if getattr(quester, "_quad_helping", None):
                     info["helping"] = quester._quad_helping
+                if getattr(quester, "_quad_following", None):
+                    info["following"] = quester._quad_following
         except Exception as exc:
             info["read_error"] = repr(exc)
         publish(info)

@@ -89,6 +89,8 @@ def panel_rows(names: dict, now: float | None = None) -> list[dict]:
         if running and link:
             if link.get("helping"):
                 note = f"ahead of {link['helping']}: waiting and helping them"
+            elif link.get("following"):
+                note = f"fighting beside {link['following']} (same objective)"
             elif link.get("at_sigil"):
                 note = "at a dungeon entrance: waiting for the team"
             elif link.get("wants_backup"):

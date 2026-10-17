@@ -428,3 +428,19 @@ def test_no_chest_detours_in_quadbox():
     assert not Config().quadbox.chests
     assert not is_collectable("WC-Chest-Common-001", reagents=False, chests=False)
     assert is_collectable("COLLECT_Gnome", reagents=False, chests=False)
+
+
+def test_questers_fight_together_q1_leads():
+    from wiz101_auto.quadlink import fight_leader, same_objective
+
+    assert same_objective("Defeat Lost Soul in Unicorn Way (0 of 2)",
+                          "Defeat Lost Soul in Unicorn Way (1 of 2)")
+    assert not same_objective("Defeat Lost Soul in Unicorn Way", "Defeat Rattlebones")
+    obj = "Defeat Lost Soul in Unicorn Way (0 of 2)"
+    mates = {"q1": _mate("q1", objective="Defeat Lost Soul in Unicorn Way (1 of 2)"),
+             "booster": _mate("booster")}
+    assert fight_leader("q2", mates, obj) == "q1"
+    assert fight_leader("q1", {"q2": _mate("q2", objective=obj)}, obj) is None  # (q1 leads)
+    assert fight_leader("q2", mates, "Talk to Private Connelly") is None  # (talks: each their own)
+    mates["q1"].state = "paused"
+    assert fight_leader("q2", mates, obj) is None  # (a paused leader: on alone)
