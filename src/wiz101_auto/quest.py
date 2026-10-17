@@ -1501,14 +1501,40 @@ class Quester:
     async def objective(self) -> str:
         texts = await ui.quest_goal_texts(self.client)
         if not texts:
-            return await ui.quest_goal(self.client)
+            return self._main_over_finder(await ui.quest_goal(self.client), [])
         try:
             goal = await self.client.goal_id()
         except Exception:
             goal = None
         if not hasattr(self, "_goal_texts"):
             self._goal_texts: dict = {}
-        return ui.pick_goal(texts, goal, self._goal_texts)
+        return self._main_over_finder(ui.pick_goal(texts, goal, self._goal_texts), texts)
+
+    def _main_over_finder(self, shown: str, texts: list[str]) -> str:
+        """Quadbox (main story only): the HUD showing Quest Finder's goal while
+        a main quest is held means the main quest's goal (another HUD line
+        if it's there, else its goal from the last book read)."""
+        from . import quadlink
+
+        finder = getattr(self, "_finder_goal", "")
+        mains = getattr(self, "_main_goals", {})
+        if not (quadlink.active() and finder and mains and norm(shown) == norm(finder)):
+            return shown
+        others = [t for t in texts if norm(t) != norm(finder)]
+        want = mains.get(self._active_quest or "") or next(iter(mains.values()))
+        pick = next((t for t in others if norm(t) == norm(want)), None) or (others[-1] if others else want)
+        if time.monotonic() - getattr(self, "_finder_retrack_at", -1e9) > 60:
+            # The book read again at the next step and the main quest tracked
+            # once more, so the game shows its goal (once a minute at most).
+            self._finder_retrack_at = time.monotonic()
+            self._force_track = True
+            self._ranked_for = None
+            self._last_rank = -1e9
+        if getattr(self, "_finder_logged", "") != pick:
+            self._finder_logged = pick
+            logger.info(f"quadbox: the game shows Quest Finder's {finder!r}; following the main quest's "
+                        f"{pick!r} instead")
+        return pick
 
     def _stop_if_asked(self, before: str, now: str):
         """state/stop_at.json {"objective": "...", "after": "..."}: stop the bot
@@ -5283,6 +5309,11 @@ class Quester:
                 self.setbacks.save()
             chosen = held[0]
         finder = next((q for _, q in all_quests if q.name == QUEST_FINDER and q.name not in set_aside), None)
+        # (Quadbox: Quest Finder's goal and the main quest's, from this read:
+        # the HUD showed Quest Finder's 'Talk To Olivia Dawnwillow' with
+        # 'Monsters and Mazes' starred in the book, and Alex went to Olivia.)
+        self._finder_goal = next((q.goal for _, q in all_quests if q.name == QUEST_FINDER), "") or ""
+        self._main_goals = {q.name: q.goal for q in main_quests if q.goal}
         if finder is not None and not (chosen and (chosen.mainline or chosen.activity)):
             # Quest Finder's marker points at someone with a quest for us, the
             # story's next one maybe (the player: after 'Gemstone Secrets' no
@@ -5440,7 +5471,10 @@ class Quester:
         # The book's encounter icon: this step is a fight even when its
         # words aren't ("Open Locked Door": beat the Kettleheads guarding it).
         self._step_is_fight = entry.fight
-        if entry.active:
+        force = getattr(self, "_force_track", False) and entry.mainline and not from_cache
+        if not from_cache:
+            self._force_track = False  # (a cached ranking keeps it for the full read)
+        if entry.active and not force:
             unopened = " (quest book not opened)" if from_cache else ""
             logger.info(f"quest priority: continuing {entry.name!r}{unopened}")
             if complete:

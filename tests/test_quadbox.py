@@ -471,3 +471,35 @@ def test_booster_casts_any_aoe_with_epic_on_it():
     assert act.kind is ActionKind.CAST and act.card.name == "Tempest"  # (no Epic: as it is)
     act = aoe_epic(Battle(me=me, allies=[], enemies=foes, cards=[bolt, storm_lord], pips=7))
     assert act.kind is ActionKind.PASS
+
+
+def test_quest_finders_goal_on_the_hud_means_the_main_quests(monkeypatch):
+    from wiz101_auto.quest import Quester
+
+    monkeypatch.setenv("WIZ101_ROLE", "q2")
+    q = Quester.__new__(Quester)
+    q._finder_goal = "Talk To Olivia Dawnwillow"
+    q._main_goals = {"Monsters and Mazes": "Talk To Lady Oriel"}
+    q._active_quest = "Monsters and Mazes"
+    hud = ["Talk To Olivia Dawnwillow"]
+    assert q._main_over_finder("Talk To Olivia Dawnwillow", hud) == "Talk To Lady Oriel"
+    assert q._main_over_finder("Talk To Olivia Dawnwillow",
+                               ["Talk To Lady Oriel", "Talk To Olivia Dawnwillow"]) == "Talk To Lady Oriel"
+    assert q._force_track  # (the book read again, the main quest tracked once more)
+    assert q._main_over_finder("Defeat Lost Soul", ["Defeat Lost Soul"]) == "Defeat Lost Soul"
+    monkeypatch.delenv("WIZ101_ROLE")
+    assert q._main_over_finder("Talk To Olivia Dawnwillow", []) == "Talk To Olivia Dawnwillow"  # (single bot)
+
+
+def test_the_pause_key_pauses_the_whole_team(monkeypatch, tmp_path):
+    from wiz101_auto.safety import shared_pause_press, shared_pause_state
+
+    monkeypatch.setenv("WIZ101_ROLE", "q1")
+    monkeypatch.setenv("WIZ101_SHARED", str(tmp_path))
+    assert shared_pause_press(True, now=100.0) is True  # (q1 saw the press first: pause)
+    assert shared_pause_press(False, now=100.3) is True  # (the booster, the same press: pause too)
+    assert shared_pause_state(50.0) == (True, 100.0)  # (anyone who missed it follows)
+    assert shared_pause_state(100.0) is None
+    assert shared_pause_press(False, now=200.0) is False  # (a new press: play on)
+    monkeypatch.delenv("WIZ101_ROLE")
+    assert shared_pause_press(True, now=300.0) is True and shared_pause_state(0.0) is None  # (single bot)

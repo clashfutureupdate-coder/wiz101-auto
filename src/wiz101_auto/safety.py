@@ -122,6 +122,56 @@ PAUSED_FILE = Path("state") / "paused.flag"  # the player paused: kept across re
 STOP_GRACE = 10.0  # seconds a stop key gets before the process ends outright
 
 
+PAUSE_PRESS_WINDOW = 1.0  # quadbox: a team pause press this recent is the same press
+
+
+def _team_pause_file():
+    from .quadlink import active, shared_dir
+
+    return shared_dir() / "pause.json" if active() else None
+
+
+def shared_pause_press(want: bool, now: float | None = None) -> bool:
+    """The pause key was pressed: what the team does. The first bot to see a
+    press decides (it posts the new state); the others, seeing the same press
+    a moment later, take that state rather than toggling again."""
+    import json
+
+    path = _team_pause_file()
+    if path is None:
+        return want
+    now = time.time() if now is None else now
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if now - float(data["at"]) < PAUSE_PRESS_WINDOW:
+            return bool(data["paused"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"paused": want, "at": now}), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+    return want
+
+
+def shared_pause_state(seen: float) -> tuple[bool, float] | None:
+    """A team pause press newer than `seen`: (paused, when), else None."""
+    import json
+
+    path = _team_pause_file()
+    if path is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        at = float(data["at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (bool(data["paused"]), at) if at > seen else None
+
+
 class Controller:
     def __init__(self, stop_key: str, pause_key: str, max_hours: float):
         self.stop_keys = parse_hotkey(stop_key)
@@ -135,6 +185,7 @@ class Controller:
         self._resume.set()
         self.stop_reason = ""
         self.idle_until = 0.0  # the stall watchdog ignores quiet periods before this
+        self._pause_seen = time.time()  # the last team pause press followed (quadbox)
         if PAUSED_FILE.exists():
             # Paused before a restart stays paused (a restart for a code change
             # took the game back from the player mid-play, 2026-10-16).
@@ -241,7 +292,8 @@ class Controller:
                         os._exit(3)
                 pause_down = key_pressed(self.pause_keys)
                 if pause_down and not was_pause_down:
-                    loop.call_soon_threadsafe(self.set_paused, not self.paused)
+                    want = shared_pause_press(not self.paused)
+                    loop.call_soon_threadsafe(self.set_paused, want)
                 was_pause_down = pause_down
                 time.sleep(0.05)
 
@@ -259,6 +311,13 @@ class Controller:
                           else "stop requested from the terminal")
                 break
             if ticks % 10 == 0:
+                shared = shared_pause_state(self._pause_seen)
+                if shared is not None:
+                    # (Quadbox: another bot saw the pause key; all follow it.
+                    # Allan fought on with both questers paused.)
+                    self._pause_seen = shared[1]
+                    if shared[0] != self.paused:
+                        self.set_paused(shared[0], " (with the team)")
                 from .control import PAUSE_REQUEST
 
                 if PAUSE_REQUEST.exists():  # the control page's pause / resume button
