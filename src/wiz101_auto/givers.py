@@ -32,6 +32,7 @@ from loguru import logger
 from wizwalker import XYZ, Keycode
 
 from . import ui
+from .paths import DOCS
 from .upkeep import is_free, mob_positions, wait_until_free
 
 TALKED_PATH = Path("state") / "npc_talked.json"
@@ -112,7 +113,7 @@ _OBJECT_WORDS = frozenset({"chest", "circle", "sign", "signpost", "statue", "doo
 
 _AMBIENT = re.compile(r"^amb(?!rose)")  # "AmbLady", "AmbWalker10"; not Headmaster Ambrose
 
-GUIDE_DIR = Path("docs") / "sidequests"
+GUIDE_DIR = DOCS / "sidequests"
 MENU_QUESTS = 3  # quest options taken from one NPC's menu
 NO_PROMPT_RETRIES = 3  # walks to an NPC that showed no talk prompt before giving up
 # Never asked for quests (the player's call): Prospector Zeke's are hunts for

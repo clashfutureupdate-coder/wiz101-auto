@@ -58,10 +58,11 @@ REM (skipped for commands like "status"/"stop" that manage the running bot)
 if defined HAS_ARGS goto :python
 echo [1/4] Checking for other running copies of the bot...
 REM A bot started from the terminal is stopped cleanly first (unhooks the game).
+REM (Quadbox's bots, started with --role, are left alone: quadbox.bat stops them.)
 if exist ".venv\Scripts\python.exe" if exist state\bot.pid (
   ".venv\Scripts\python.exe" -m wiz101_auto stop
 )
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*' -and $_.CommandLine -match 'wiz101[_-]auto' }; foreach ($x in $p) { Write-Host ('      stopping old bot, PID ' + $x.ProcessId); Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue }; if ($p) { exit 1 } else { exit 0 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*' -and $_.CommandLine -match 'wiz101[_-]auto' -and $_.CommandLine -notmatch '--role' }; foreach ($x in $p) { Write-Host ('      stopping old bot, PID ' + $x.ProcessId); Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue }; if ($p) { exit 1 } else { exit 0 }"
 if errorlevel 1 (
   echo       Old bot stopped. If the new one says it cannot hook into the game,
   echo       fully close and restart Wizard101, then run this again.

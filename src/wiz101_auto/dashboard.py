@@ -26,6 +26,7 @@ from pathlib import Path
 from loguru import logger
 
 from . import lifetime
+from .paths import DOCS
 from .questlist import (
     SIDE_WORLDS,
     WORLDS,
@@ -184,7 +185,7 @@ def _route(running: bool) -> dict:
     return data
 
 
-def build_data(docs: Path = Path("docs")) -> dict:
+def build_data(docs: Path = DOCS) -> dict:
     status = _read_json(STATUS)
     book = _read_json(QUEST_BOOK)
     completed = load_completed(docs / "CompletedQuests.txt")
@@ -403,9 +404,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 CONTROL = Path(__file__).with_name("control.html")  # the control page
-UI_IMAGES = Path("docs") / "ui_images"  # the stream page's Wizard101 look: sky.jpg, portrait.png
-PIPS = Path("docs") / "pip_images"  # Pip.png, Power_Pip.png, <School>_School_Pip.png
-CARDS = Path("docs") / "spell_images"  # card art: <school>/<name>_spell.png, index.json (name -> file)
+UI_IMAGES = DOCS / "ui_images"  # the stream page's Wizard101 look: sky.jpg, portrait.png
+PIPS = DOCS / "pip_images"  # Pip.png, Power_Pip.png, <School>_School_Pip.png
+CARDS = DOCS / "spell_images"  # card art: <school>/<name>_spell.png, index.json (name -> file)
 
 
 def _card_file(rel: str, folder: Path | None = None) -> tuple[bytes, str] | None:

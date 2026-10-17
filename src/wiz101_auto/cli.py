@@ -109,10 +109,20 @@ def main(argv: list[str] | None = None):
     run_p.add_argument("-c", "--config", default=None, help="path to config YAML")
     run_p.add_argument("-m", "--mode", choices=["quest", "fight", "farm"], help="override config mode")
     run_p.add_argument("-v", "--verbose", action="store_true")
+    run_p.add_argument("--role", default="", choices=["", "q1", "q2", "q3", "booster"],
+                       help=argparse.SUPPRESS)  # (quadbox: this wizard's role)
 
     sub.add_parser("visit-professor", help="have the bot fetch the school professor's quests (e.g. Aquila)")
     sub.add_parser("relog", help="quit to character select and play again (bot stopped): unsticks the wizard")
-    sub.add_parser("set-login", help="save the game login (Windows Credential Manager) for game restarts")
+    login_p = sub.add_parser("set-login",
+                             help="save the game login (Windows Credential Manager) for game restarts")
+    login_p.add_argument("--role", default="", choices=["", "q1", "q2", "q3", "booster"],
+                         help="quadbox: that wizard's login")
+    quad_p = sub.add_parser("quadbox", help="3 questers + 1 booster, one bot per game (quadbox.bat)")
+    quad_p.add_argument("action", nargs="?", default="run", choices=["run", "logins", "status", "stop"])
+    quad_p.add_argument("-c", "--config", default="config.yaml")
+    ident_p = sub.add_parser("quad-identify", help=argparse.SUPPRESS)  # (quadbox: one game's wizard, as JSON)
+    ident_p.add_argument("--pid", type=int, required=True)
     sub.add_parser("restart-game", help="close Wizard101, start it and log in (bot stopped)")
     insp = sub.add_parser("inspect", help="print what the bot sees (state, battle, UI)")
     insp.add_argument("--windows", action="store_true", help="also dump the visible UI window tree")
@@ -169,8 +179,14 @@ def main(argv: list[str] | None = None):
     logs_p.add_argument("-f", "--follow", action="store_true")
     sup_p = sub.add_parser("supervise", help="run in the foreground, restarting after crashes")
     sup_p.add_argument("-c", "--config", default="config.yaml")
+    sup_p.add_argument("--role", default="", choices=["", "q1", "q2", "q3", "booster"],
+                       help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
+    if getattr(args, "role", "") and args.command in ("run", "supervise"):
+        import os
+
+        os.environ["WIZ101_ROLE"] = args.role  # (quadbox sets it too; this keeps a hand-run copy right)
 
     from . import service
 
@@ -186,7 +202,11 @@ def main(argv: list[str] | None = None):
     if args.command == "logs":
         sys.exit(service.logs(args.n, args.follow))
     if args.command == "supervise":
-        sys.exit(service.supervise(args.config))
+        sys.exit(service.supervise(args.config, role=args.role))
+    if args.command == "quadbox":
+        from . import quadbox
+
+        sys.exit(quadbox.main(args.action, args.config))
 
     if sys.platform != "win32":
         raise SystemExit("wiz101-auto talks to the Windows game client and must run on Windows.")
@@ -211,7 +231,8 @@ def main(argv: list[str] | None = None):
         if not user or not pw:
             print("nothing saved")
             return 1
-        ok = save_login(user, pw) and (load_login() or ("", ""))[0] == user
+        role = args.role or None
+        ok = save_login(user, pw, role) and (load_login(role) or ("", ""))[0] == user
         print("saved: the supervisor can now restart a frozen game and log in" if ok else "could not save it")
         return 0 if ok else 1
     if args.command == "restart-game":
@@ -264,6 +285,10 @@ def main(argv: list[str] | None = None):
         asyncio.run(_relog())
         return
 
+    if args.command == "quad-identify":
+        from .quadbox import identify_main
+
+        sys.exit(identify_main(args.pid))
     if args.command == "inspect":
         _setup_logging(None, True)
         from .inspect_state import inspect

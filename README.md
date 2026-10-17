@@ -47,6 +47,14 @@ already has.
 If hooks fail to activate, fully restart Wizard101 and try again. Moving your
 wizard one step while it starts can also help.
 
+## Quadbox: 3 questers + 1 booster
+
+Four accounts on one PC, one bot per game: three wizards quest together and a
+higher-level booster joins their fights. Double-click **`quadbox.bat`** and
+follow **`START HERE.txt`** (friends lists, the questers' names in
+`config.yaml`, saving the logins). Each wizard's files are in `quad\q1`,
+`quad\q2`, `quad\q3` and `quad\booster`. **Ctrl+Shift+Q** stops all four.
+
 ## Running from a terminal (VS Code)
 
 From the repo folder:

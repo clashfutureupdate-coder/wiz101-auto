@@ -17,6 +17,7 @@ from wizwalker.combat import CombatHandler
 from .. import ui
 from ..deck import load_deck_counts
 from ..dungeons import DungeonMemory
+from ..paths import DOCS
 from .brain import (
     Strategy,
     card_rules,
@@ -149,7 +150,7 @@ def _write_plan(battle, action, strategy, discards: int, gone=None, discarded=No
         logger.debug(f"battle plan not written: {exc!r}")
 
 
-PET_ART = Path("docs") / "spell_images" / "pet"  # the player's art for the pet's cards
+PET_ART = DOCS / "spell_images" / "pet"  # the player's art for the pet's cards
 PET_WORDS = ("pet", "gryphon")  # in an item card's template name: the pet's card
 _ITEM_NAMES_SEEN: set[str] = set()
 

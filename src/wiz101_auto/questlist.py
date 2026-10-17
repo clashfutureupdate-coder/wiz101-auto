@@ -22,7 +22,9 @@ from pathlib import Path
 
 from loguru import logger
 
-QUEST_LIST = Path("docs") / "QuestList.txt"
+from .paths import DOCS
+
+QUEST_LIST = DOCS / "QuestList.txt"
 COMPLETED_LOG = Path("docs") / "CompletedQuests.txt"
 
 _SECTION = re.compile(r"^(?P<area>.+?)\s*\(\d+ quests?\)\s*$", re.IGNORECASE)
@@ -172,7 +174,7 @@ WORLDS = (
 )
 # Optional side worlds, by the arc they belong to.
 SIDE_WORLDS = {"Grizzleheim": "Arc 1", "Wintertusk": "Arc 1", "Wysteria": "Arc 1", "Catacombs": "Arc 3"}
-WORLD_LISTS = Path("docs") / "quests"  # <World>.txt, same format as QuestList.txt
+WORLD_LISTS = DOCS / "quests"  # <World>.txt, same format as QuestList.txt
 # Zone ids start with the world's internal name ("WizardCity/WC_Hub").
 _ZONE_WORLDS = {"wizardcity": "Wizard City", "dragonspire": "Dragonspyre"}
 # Side worlds the game keeps inside another world's zones: Wintertusk's
@@ -228,7 +230,7 @@ def tidy_world_list(listed: list[ListedQuest]) -> list[ListedQuest]:
     return out
 
 
-def load_world_lists(docs: Path = Path("docs")) -> dict[str, list[ListedQuest]]:
+def load_world_lists(docs: Path = DOCS) -> dict[str, list[ListedQuest]]:
     """Quest lists per world: docs/QuestList.txt is Wizard City; docs/quests/
     <World>.txt adds others (pasted from Spiral Tracker)."""
     out: dict[str, list[ListedQuest]] = {}

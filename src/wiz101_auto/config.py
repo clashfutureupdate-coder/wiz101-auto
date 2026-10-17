@@ -129,8 +129,21 @@ class MovementConfig:
 
 
 @dataclass
+class QuadboxConfig:
+    """Quadbox (quadbox.bat): 3 questers and a higher-level booster, each game
+    with its own bot (quadlink.py). `names`: the questers' names exactly as the
+    Friends list shows them (friend teleports go by name)."""
+
+    names: dict = field(default_factory=dict)  # {q1: "Name One", q2: ..., q3: ...}
+    follow: str = "q1"  # the quester the booster stays with when nobody is fighting
+    join_fights: bool = True  # a quester joins a teammate's fight on the same objective nearby
+    join_range: float = 3000.0  # ... this close (same zone)
+    friend_teleports: bool = True  # into a teammate's dungeon / to a quester in another zone
+
+
+@dataclass
 class Config:
-    mode: str = "quest"  # quest | fight | farm | boss
+    mode: str = "quest"  # quest | fight | farm | boss | boost (quadbox's booster: set by quadbox)
     farm_seconds_between_fights: float = 2.0
     log_file: str = "wiz101-auto.log"
     gear_checks: bool = True  # try on gear after level-ups and new items (slow: minutes per check)
@@ -144,6 +157,7 @@ class Config:
     deck_search: DeckSearchConfig = field(default_factory=DeckSearchConfig)
     pet: PetConfig = field(default_factory=PetConfig)
     movement: MovementConfig = field(default_factory=MovementConfig)
+    quadbox: QuadboxConfig = field(default_factory=QuadboxConfig)
 
 
 def _merge(obj: Any, data: dict[str, Any], path: str = "") -> Any:
@@ -177,8 +191,16 @@ def load_config(path: str | Path | None) -> Config:
 
     parse_hotkey(cfg.safety.stop_key)  # fail early on a typo, not mid-session
     parse_hotkey(cfg.safety.pause_key)
-    if cfg.mode not in ("quest", "fight", "farm", "boss"):
+    if cfg.mode not in ("quest", "fight", "farm", "boss", "boost"):
         raise ValueError(f"mode must be quest, fight, farm or boss, not {cfg.mode!r}")
+    names = cfg.quadbox.names
+    if not isinstance(names, dict) or any(not isinstance(v, str) for v in names.values()):
+        raise ValueError('quadbox.names should look like {q1: "Name One", q2: "Name Two", q3: "Name Three"}')
+    unknown = set(names) - {"q1", "q2", "q3", "booster"}
+    if unknown:
+        raise ValueError(f"quadbox.names: unknown role(s) {sorted(unknown)} (use q1, q2, q3)")
+    if cfg.quadbox.follow not in ("q1", "q2", "q3"):
+        raise ValueError(f"quadbox.follow must be q1, q2 or q3, not {cfg.quadbox.follow!r}")
     if cfg.mode == "boss" and not cfg.boss_farm.boss:
         raise ValueError("mode: boss needs boss_farm.boss (the boss's name)")
     return cfg

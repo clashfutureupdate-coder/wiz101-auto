@@ -1,0 +1,50 @@
+# Quadbox settings: 3 questers + 1 booster (quadbox.bat copies this to config.yaml).
+# All four bots read this one file. START HERE.txt explains every setting.
+# Open it in Notepad, change what you like, save with Ctrl+S, then run quadbox.bat again.
+mode: quest
+
+quest:
+  teleport: true
+  accept_side_quests: false   # main story only (true: take side quests too)
+  stuck_minutes: 12
+
+upkeep:
+  use_potions: true
+  buy_potions: true
+  potion_health_ratio: 0.5
+  potion_mana_ratio: 0.25
+  collect_wisps: true
+  min_health_to_fight: 0.8
+  rest_until_health: 0.95
+  rest_max_minutes: 8
+
+safety:
+  stop_key: ctrl+shift+q      # stops all 4
+  pause_key: ctrl+shift+p     # pauses / resumes all 4
+  stall_seconds: 15
+  max_hours: 0                # 0 = run until stopped
+
+gear_checks: false            # true: try on new gear after level-ups and loot (slow)
+
+combat:
+  flee_below: 0.0
+  rollouts: true              # if the games lag, set this to false
+  strategy:
+    heal_threshold: 0.5       # heal under 50% health
+    max_blades: 2
+    max_traps: 2
+    boss_setup: true
+
+progression:
+  enabled: true
+  school: ""                  # blank: each bot reads its own wizard's school
+  rebuild_on_start: true
+  check_minutes: 30
+  auto_train: true
+
+quadbox:
+  follow: q1                  # the quester the booster stays with when nobody is fighting
+  join_fights: true           # questers join each other's fights on the same objective
+  friend_teleports: true      # into a teammate's dungeon, and the booster to the questers
+  # Your questers' names exactly as the Friends list shows them:
+  names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}

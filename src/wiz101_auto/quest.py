@@ -2328,6 +2328,12 @@ class Quester:
             self._sigil_for = await self.objective() or ""
         except Exception:
             self._sigil_for = ""
+        from . import quadlink
+
+        if quadlink.active() and await quadlink.into_mates_dungeon(self, zone or "", sigil):
+            # (A teammate is in there already: their copy, not one of our own.)
+            self._sigil_failed_at = None
+            return True
         from .teamup import QUEUE_RECHECK, load_queue
 
         queue = load_queue()
@@ -2598,6 +2604,7 @@ class Quester:
                     self._dungeon = (zone or "", await self.client.zone_name() or "")
                     self._sigil_failed_at = None
                     await self._remember_dungeon(zone, sigil)
+                    quadlink.note_entered(zone or "", sigil)  # (teammates follow us in)
                     return True
                 if await self.client.in_battle():
                     waited = time.monotonic() - started
@@ -9944,6 +9951,10 @@ class Quester:
         if not await is_free(self.client):
             logger.debug("step: not free")
             return
+        from . import quadlink
+
+        if quadlink.active() and await quadlink.join_teammate_fight(self):
+            return  # (a teammate's fight on our objective, next to us: in it)
         await self._learn_door_walk()
         await clear_popups(self.client)
         logger.debug("step: popups cleared")

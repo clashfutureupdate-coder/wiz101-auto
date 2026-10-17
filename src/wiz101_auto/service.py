@@ -180,6 +180,8 @@ def bot_processes() -> list[int]:
     pids = []
     for line in out.splitlines():
         pid, _, cmd = line.strip().partition(" ")
+        if "--role" in cmd:
+            continue  # (quadbox's bots: quadbox stops them, never this install's start/stop)
         if "wiz101_auto" in cmd and (" run" in cmd or " supervise" in cmd) and pid.isdigit():
             pids.append(int(pid))
     return [p for p in pids if p != os.getpid()]
@@ -276,17 +278,19 @@ def _bot_output_since(offset: int) -> str:
         return ""
 
 
-def _wait_or_stop(seconds: float) -> bool:
-    """Sleep `seconds`; True if a stop was asked meanwhile."""
+def _wait_or_stop(seconds: float, until=None) -> bool:
+    """Sleep `seconds` (or until `until()` is true); True if a stop was asked meanwhile."""
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         if STOP_FILE.exists():
             return True
+        if until is not None and until():
+            return False
         time.sleep(1.0)
     return False
 
 
-def supervise(config: str, max_restarts: int = 10) -> int:
+def supervise(config: str, max_restarts: int = 10, role: str = "") -> int:
     """Run the bot in a child process and restart it after crashes.
 
     Clean stops (stop.request, Ctrl+Shift+Q, safety limits) exit with 0 and
@@ -308,12 +312,18 @@ def supervise(config: str, max_restarts: int = 10) -> int:
                 # (Servers down, a login that didn't take: again in 15 min, not give up.)
                 print(f"supervisor: could not restart the game; trying again in "
                       f"{gamerestart.RETRY_SECONDS / 60:.0f} min", flush=True)
-                if _wait_or_stop(gamerestart.RETRY_SECONDS):
+                # (Its game opened meanwhile, by the player or handed over by
+                # quadbox: on at once, not after the rest of the wait.)
+                back = None
+                if why.startswith("no game window"):
+                    back = lambda: bool(gamerestart.game_windows())  # noqa: E731
+                if _wait_or_stop(gamerestart.RETRY_SECONDS, back):
                     return 0
                 continue
         started = time.monotonic()
         last_run_from = _out_size()
-        code = subprocess.call([_python(), "-m", "wiz101_auto", "run", "-c", config])
+        code = subprocess.call([_python(), "-m", "wiz101_auto", "run", "-c", config,
+                                *(["--role", role] if role else [])])
         if gamerestart.REQUEST.exists() and not STOP_FILE.exists():
             continue  # the bot stopped for a game restart: do it, then carry on
         if code == 0 or STOP_FILE.exists():

@@ -1,0 +1,149 @@
+Quad Box Setup (3 questers + 1 booster)
+=======================================
+
+What you need
+- A Windows PC with Wizard101 and 4 accounts: 3 questers + 1 higher-level booster
+- Python 3.13 or newer (python.org, tick "Add python.exe to PATH") and Git (git-scm.com)
+
+
+One-time setup
+--------------
+1. Extract the zip (right-click > Extract All). Don't run it from inside the zip.
+2. If you use Spiral Spoiler, move MSIMG32.dll out of
+   C:\ProgramData\KingsIsle Entertainment\Wizard101\Bin
+   or the bot can't hook into the game.
+3. The booster must be the highest level of the 4.
+4. Friends: the booster must be friends with all 3 questers, and the 3 questers
+   with each other.
+5. Open config.yaml in Notepad. At the bottom, put your questers' names exactly
+   as the Friends list shows them:
+
+     names: {q1: "Name One", q2: "Name Two", q3: "Name Three"}
+
+   Keep the spaces at the start of the line, then save with Ctrl+S.
+   (No config.yaml yet? Run quadbox.bat once and it makes one; menu option 4
+   opens it in Notepad.)
+6. Optional: run quadbox.bat and pick [2] to save the questers' logins, so a
+   frozen or crashed game restarts by itself. (It asks for the booster's too;
+   leave a username empty to skip one.)
+
+
+Every time
+----------
+1. Open all 4 games, log in and stand the wizards in the world. The first time,
+   open the questers in q1, q2, q3 order (it remembers them after that).
+2. Double-click quadbox.bat. The first run installs for a few minutes.
+3. Ctrl+Shift+Q stops all 4 and Ctrl+Shift+P pauses. Don't close the window
+   with the X.
+
+
+Tips
+----
+- Start all 3 questers on the same main quest so they team up.
+- Defaults: main story only, heals under 50% HP, gear checks off. Change them in
+  config.yaml (every setting is listed below).
+- If the games lag, set "rollouts: false" under "combat:" in config.yaml.
+
+
+What each wizard does
+---------------------
+q1, q2, q3   Quest on their own, like the single bot. When a teammate is
+             fighting nearby for the same "Defeat ..." objective, they join that
+             fight instead of starting another. At a dungeon sigil, if a
+             teammate is already inside, they friend-teleport to them (the same
+             dungeon) instead of going in alone. Team Up dungeons are entered
+             straight away: the team follows by friend teleport, no public
+             Team Up queue.
+booster      Never quests. Joins any quester's fight (teleports onto them in the
+             same zone, friend-teleports from another zone); otherwise stays
+             with q1. Its deck is left exactly as you built it.
+
+The window shows each wizard's level, health, zone and objective, and the last
+thing each one did. Each wizard's own files are in quad\q1, quad\q2, quad\q3
+and quad\booster (logs: wiz101-auto.log and activity.log in each).
+
+If a game freezes or crashes, its bot closes and restarts that game and logs
+back in (with the saved login; one game at a time). Without a saved login,
+open that game again and log in: quadbox hands it back to the right wizard
+within a minute.
+
+
+Every setting in config.yaml
+----------------------------
+All four bots read the same config.yaml. Save with Ctrl+S, then stop (Ctrl+Shift+Q)
+and start quadbox.bat again for changes to take effect.
+
+mode: quest                     Leave as quest (the booster is set by quadbox).
+
+quest:
+  teleport: true                false = walk to objectives (slower, looks more human)
+  accept_side_quests: false     false = main story only; true = take side quests too
+  stuck_minutes: 12             no objective change for this long: try something else
+  photomancy: true              do the Photomancy (photo) objectives
+  flee_unneeded_fights: true    flee fights the quest doesn't need (never bosses)
+
+upkeep:
+  use_potions: true             drink potions when low
+  buy_potions: true             out of potions: go buy a full set, then come back
+  potion_health_ratio: 0.5      drink a potion below this share of health
+  potion_mana_ratio: 0.25       ... or of mana
+  collect_wisps: true           pick up health and mana wisps after fights
+  min_health_to_fight: 0.8      below this, heal up before questing on
+  rest_until_health: 0.95       ... up to this
+  min_mana_to_fight: 0.65       the same for mana
+  rest_until_mana: 0.85
+  rest_max_minutes: 8           give up healing after this long
+
+safety:
+  stop_key: ctrl+shift+q        stops all 4 (any ctrl/shift/alt combo + one key)
+  pause_key: ctrl+shift+p       pauses / resumes all 4
+  stall_seconds: 15             nothing happens this long: close menus, retry, switch quest
+  max_hours: 0                  stop after this many hours (0 = run until stopped)
+  mouseless: true               the bots click without moving your real mouse
+
+gear_checks: false              true = try on new gear after level-ups and loot (slow)
+gear_checks_new_items: true     with gear_checks on: also after new loot, not only level-ups
+
+combat:
+  rollouts: true                play each move out in a simulator first (set false if the games lag)
+  adapt_deck: true              after a lost boss fight, search for a better deck (questers only)
+  flee_below: 0.0               flee under this share of health (0 = never)
+  max_discards: 99              cards a round may discard
+  strategy:
+    heal_threshold: 0.5         heal under 50% health
+    shield_threshold: 0.55      shield under this
+    max_blades: 2               blades stacked before a big hit
+    max_traps: 2                traps stacked before a big hit
+    boss_setup: true            set up blades and traps against bosses
+
+progression:
+  enabled: true                 rebuild the deck as the wizard learns spells (questers)
+  school: ""                    leave blank: each wizard's school is read from the game
+  rebuild_on_start: true        re-plan the deck when the bot starts
+  check_minutes: 30             re-read the spellbook this often
+  auto_train: true              train new spells at the school professor
+  train_levels: [...]           levels at which it goes to train
+  deck:                         attack_spells, attack_copies, heal_copies, blade_copies,
+                                trap_copies, shield_copies, include: {"Pixie": 2}, exclude: [...]
+
+pet:
+  auto: true                    play the pet dance game whenever energy is full
+  feed: true                    feed the first snack after each win
+
+movement:
+  walk: false                   true = walk instead of teleporting inside a zone
+
+quadbox:
+  follow: q1                    the quester the booster stays with when nobody is fighting
+  join_fights: true             questers join each other's fights on the same objective
+  join_range: 3000              ... this close, in the same zone
+  friend_teleports: true        into a teammate's dungeon, and the booster to the questers
+  names: {q1: "...", q2: "...", q3: "..."}
+                                your questers' names exactly as the Friends list shows them
+
+
+Warning
+-------
+Automation breaks KingsIsle's Terms of Use and accounts do get banned. Four
+accounts botting together are easier to spot than one. Use accounts you can
+afford to lose.

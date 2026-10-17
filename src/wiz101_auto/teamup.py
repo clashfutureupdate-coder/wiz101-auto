@@ -198,9 +198,21 @@ async def start_early(client) -> bool:
 TEAM_LIST_FILE = Path("state") / "team_dungeons.json"  # {dungeon: quest}: added after 5 losses
 
 
+def _quadbox() -> bool:
+    """Quadbox: the team is our own wizards, who follow each other in by
+    friend teleport. No Team Up queue, no team-only dungeons (a team bot
+    never starts a fight, it waits for a teammate to: with three of them,
+    nobody would)."""
+    from .quadlink import active
+
+    return active()
+
+
 def team_list() -> dict[str, str]:
     """Dungeons added to team play by the bot (a main-quest boss there won 5
     times: the player's "multiplayer mode"), each with the quest it's for."""
+    if _quadbox():
+        return {}
     try:
         return dict(json.loads(TEAM_LIST_FILE.read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
@@ -293,6 +305,8 @@ def drop_team_dungeons(open_quests: set[str], seen_before: set[str] | None = Non
 
 def is_team_dungeon(dungeon: str) -> bool:
     """A dungeon only entered with a team: the fixed ones, and those added."""
+    if _quadbox():
+        return False
     return dungeon in TEAM_UP_DUNGEONS or dungeon in team_list()
 
 
@@ -331,6 +345,8 @@ def solo_for(dungeon: str, seconds: float):
 
 def is_team_up_zone(zone: str) -> bool:
     """A room of a dungeon that is only entered with a team."""
+    if _quadbox():
+        return False
     teams = team_list()
     if zone in TEAM_UP_HUBS:
         return False

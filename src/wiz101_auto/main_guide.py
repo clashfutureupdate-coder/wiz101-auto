@@ -18,7 +18,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-GUIDE_DIR = Path("docs") / "guides"
+from .paths import DOCS
+
+GUIDE_DIR = DOCS / "guides"
 
 _LINE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s+-\s+(.+)$")
 _GIVEN = re.compile(r"\(given by ([^)]+)\)", re.I)

@@ -130,8 +130,15 @@ async def connect(handler: ClientHandler):
     # game is hooked (hooks patch the game's memory), never the focused one.
     pid = bot_game_pid()
     mine = [c for c in clients if c.process_id == pid]
+    from . import quadlink
+
     if mine:
         client = mine[0]
+    elif quadlink.active():
+        # (Quadbox: never another wizard's game, even the only one open. The
+        # supervisor restarts this one, or quadbox hands over its new window.)
+        raise SystemExit(f"No Wizard101 window found for {quadlink.role()} (process {pid or '?'}): "
+                         "its game is closed.")
     elif len(clients) == 1:
         client = clients[0]
     else:
@@ -574,6 +581,18 @@ async def farm_loop(client, cfg: Config, controller: Controller, progression: Pr
 
 
 async def run(cfg: Config):
+    from . import quadlink
+
+    if quadlink.active():
+        quadlink.configure(cfg.quadbox)
+        if quadlink.is_booster():
+            cfg.mode = "boost"  # (never quests: follows the questers into their fights)
+        if cfg.progression.school:
+            # (One config for four wizards: each reads its own school from the game.)
+            logger.info(f"quadbox: progression.school {cfg.progression.school!r} ignored; reading this "
+                        "wizard's own")
+            cfg.progression.school = ""
+        logger.info(f"quadbox: playing as {quadlink.role()}")
     s = cfg.safety
     controller = Controller(s.stop_key, s.pause_key, s.max_hours)
     logger.info(f"mode={cfg.mode}; {s.stop_key}=stop, {s.pause_key}=pause/resume")
@@ -615,7 +634,7 @@ async def run(cfg: Config):
                           rollouts=c.rollouts)
         dialogue = DialoguePolicy()
         adapter = None
-        if c.adapt_deck:
+        if c.adapt_deck and cfg.mode != "boost":  # (the booster's deck is the player's: never changed)
             from .deck_adapt import DeckAdapter
 
             adapter = DeckAdapter()  # a boss deck after a loss, the general deck after the win
@@ -685,6 +704,12 @@ async def run(cfg: Config):
             tasks.append(asyncio.create_task(farmer.run(), name="boss"))
         if cfg.mode == "farm":
             tasks.append(asyncio.create_task(farm_loop(client, cfg, controller, progression), name="farm"))
+        if quadlink.active():
+            tasks.append(asyncio.create_task(quadlink.publish_loop(client, controller, quester),
+                                             name="quadlink"))
+        if cfg.mode == "boost":
+            tasks.append(asyncio.create_task(quadlink.boost_loop(client, cfg.upkeep, controller),
+                                             name="boost"))
 
         tasks.append(
             asyncio.create_task(status_loop(client, controller, fighter, quester, watchdog), name="status")

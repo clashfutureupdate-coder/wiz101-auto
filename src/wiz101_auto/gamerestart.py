@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import subprocess
 import sys
 import time
@@ -28,7 +29,7 @@ from pathlib import Path
 
 REQUEST = Path("state") / "game_restart.request"
 HISTORY = Path("state") / "game_restarts.txt"  # one time per restart, for the hourly cap
-CRED_TARGET = "wiz101-auto/Wizard101"
+CRED_TARGET = "wiz101-auto/Wizard101"  # quadbox: one per wizard, "<this>/q1"... (cred_target)
 GAME_EXE = "WizardGraphicalClient.exe"
 FREEZE_SECONDS = 300.0  # on a loading screen this long: frozen
 HUNG_SECONDS = 120.0  # the window not responding this long: frozen
@@ -58,18 +59,27 @@ class _CREDENTIAL(ctypes.Structure):
     ]
 
 
+def cred_target(role: str | None = None) -> str:
+    """Where this bot's login is kept: quadbox's wizards each have their own."""
+    if role is None:
+        from .quadlink import role as quad_role
+
+        role = quad_role()
+    return f"{CRED_TARGET}/{role}" if role else CRED_TARGET
+
+
 _CRED_TYPE_GENERIC = 1
 _CRED_PERSIST_LOCAL_MACHINE = 2
 
 
-def save_login(username: str, password: str) -> bool:
+def save_login(username: str, password: str, role: str | None = None) -> bool:
     """Store the game login for this Windows user. True if it worked."""
     if sys.platform != "win32":
         return False
     blob = password.encode("utf-16-le")
     cred = _CREDENTIAL()
     cred.Type = _CRED_TYPE_GENERIC
-    cred.TargetName = CRED_TARGET
+    cred.TargetName = cred_target(role)
     cred.UserName = username
     cred.CredentialBlobSize = len(blob)
     buf = ctypes.create_string_buffer(blob, len(blob))
@@ -78,12 +88,12 @@ def save_login(username: str, password: str) -> bool:
     return bool(ctypes.windll.advapi32.CredWriteW(ctypes.byref(cred), 0))
 
 
-def load_login() -> tuple[str, str] | None:
+def load_login(role: str | None = None) -> tuple[str, str] | None:
     """(username, password) saved by `set-login`, or None."""
     if sys.platform != "win32":
         return None
     ptr = ctypes.POINTER(_CREDENTIAL)()
-    if not ctypes.windll.advapi32.CredReadW(CRED_TARGET, _CRED_TYPE_GENERIC, 0, ctypes.byref(ptr)):
+    if not ctypes.windll.advapi32.CredReadW(cred_target(role), _CRED_TYPE_GENERIC, 0, ctypes.byref(ptr)):
         return None
     try:
         cred = ptr.contents
@@ -174,7 +184,9 @@ def game_windows() -> list[int]:
     if not pid:
         return handles
     mine = [h for h in handles if window_pid(h) == pid]
-    if not mine and len(handles) == 1:
+    from .quadlink import active
+
+    if not mine and len(handles) == 1 and not active():
         # The remembered game is gone and one game is open (the player started
         # it again): that's the bot's now. (Two open: the player's own may be
         # one of them, so neither is taken.)
@@ -251,8 +263,61 @@ def restart_game(log=print) -> bool:
         time.sleep(wait)
     login = load_login()
     if login is None:
-        log("game restart: no saved login (run `wiz101-auto set-login` once); can't log back in")
+        from .quadlink import role
+
+        how = "quadbox.bat, option 2" if role() else "`wiz101-auto set-login`"
+        log(f"game restart: no saved login (run {how} once); can't log back in")
         return False
+    with restart_lock(log):
+        return _restart_game(login, log)
+
+
+RESTART_LOCK_STALE = 600.0  # a lock older than this was left by a restart that died
+
+
+class restart_lock:
+    """Quadbox: one game restart at a time across the four bots (a restart
+    takes the first new game window as its own: two at once could swap them).
+    A single bot doesn't need it: it is a no-op without a shared folder."""
+
+    def __init__(self, log=print):
+        self.log = log
+        self.path = None
+
+    def __enter__(self):
+        from .quadlink import active, shared_dir
+
+        if not active():
+            return self
+        path = shared_dir() / "game_restart.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        waited = False
+        while True:
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()} {time.time():.0f}".encode())
+                os.close(fd)
+                self.path = path
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - path.stat().st_mtime > RESTART_LOCK_STALE:
+                        path.unlink(missing_ok=True)
+                        continue
+                except OSError:
+                    continue
+                if not waited:
+                    self.log("game restart: another wizard's game is restarting; waiting for it")
+                    waited = True
+                time.sleep(5.0)
+
+    def __exit__(self, *exc):
+        if self.path is not None:
+            self.path.unlink(missing_ok=True)
+        return False
+
+
+def _restart_game(login: tuple[str, str], log=print) -> bool:
     _note_restart()
     _forget_team_queue(log)
     from wizwalker.utils import instance_login, start_instance
