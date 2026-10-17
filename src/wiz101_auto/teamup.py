@@ -336,6 +336,10 @@ def is_team_up_zone(zone: str) -> bool:
         return False
     if zone and time.monotonic() < _SOLO_UNTIL.get(_dungeon_base(zone), 0.0):
         return False
+    if zone and any(time.monotonic() < t for t in _SOLO_UNTIL.values()) and in_team_run(zone):
+        # (A later room of that run, the House of Scrolls past Zruvan Grotto:
+        # it stopped short of the Scrollkeeper for a teammate who wasn't there.)
+        return False
     if zone in TEAM_UP_DUNGEONS or zone.startswith(TEAM_UP_PREFIXES) or in_team_list(zone):
         return True
     if zone and teams and in_team_run(zone):
