@@ -4064,8 +4064,12 @@ class Quester:
         """Press Recall and wait to arrive in `marked_zone`. True if we did."""
         from .teamup import in_team_run
 
+        # (Nor when going back to a teammate still fighting: "defeated with a
+        # teammate fighting on: ... straight back to the team", then this
+        # refused it, Grandfather Spider, and the bot queued for a new team.)
         if (is_team_up_zone(marked_zone) and not is_team_up_zone(await self.client.zone_name() or "")
-                and not in_team_run(marked_zone)):
+                and not in_team_run(marked_zone)
+                and getattr(self, "_team_return_since", None) is None):
             # (A room of our team's run: back to the team is fine.)
             # Recalling into a team-only dungeon means going in alone.
             logger.info(f"not recalling into {marked_zone} alone (team-only dungeon)")
